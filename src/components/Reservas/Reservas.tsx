@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, DollarSign, Edit, Trash2, Plus, Download, FileText } from 'lucide-react';
+import { Calendar, Clock, User, DollarSign, Edit, Trash2, Plus, Download } from 'lucide-react';
 import { apiService } from '../../services/api';
 import type { Reserva, AreaComun } from '../../types';
 import { rolePermissions } from '../../types';
@@ -79,14 +79,184 @@ const Reservas: React.FC<ReservasProps> = () => {
     return horas * area.costoHora;
   };
 
+  // 🔒 VALIDACIONES PARA PREVENIR DUPLICADOS
+  
+  // Verificar si la fecha es pasada
+  const esFechaPasada = (fecha: string): boolean => {
+    const fechaSeleccionada = new Date(fecha);
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Resetear horas para comparar solo fechas
+    return fechaSeleccionada < hoy;
+  };
+
+  // Verificar duplicados exactos y solapamientos
+  const verificarConflictoReserva = (areaId: number, fechaInicio: string, fechaFin: string, horaInicio: string, horaFin: string, excludeId?: number): {
+    hayConflicto: boolean;
+    esDuplicadoExacto: boolean;
+    conflicto?: any;
+    motivo: string;
+  } => {
+    const fechaInicioCompleta = `${fechaInicio}T${horaInicio}:00`;
+    const fechaFinCompleta = `${fechaFin}T${horaFin}:00`;
+    
+    const nuevaInicio = new Date(fechaInicioCompleta);
+    const nuevaFin = new Date(fechaFinCompleta);
+    
+    const conflicto = reservas.find(reserva => {
+      // Excluir la reserva que estamos editando
+      if (excludeId && reserva.id === excludeId) return false;
+      
+      // Solo verificar en la misma área
+      if (reserva.areaId !== areaId) return false;
+      
+      // Solo verificar reservas activas
+      if (reserva.estado === 'CANCELLED') return false;
+      
+      const reservaInicio = new Date(reserva.inicio);
+      const reservaFin = new Date(reserva.fin);
+      
+      // 🚫 VERIFICAR DUPLICADO EXACTO
+      const esDuplicadoExacto = (
+        reservaInicio.getTime() === nuevaInicio.getTime() &&
+        reservaFin.getTime() === nuevaFin.getTime()
+      );
+      
+      if (esDuplicadoExacto) {
+        console.log('🚫 DUPLICADO EXACTO DETECTADO en ReservasPage:', {
+          nuevaReserva: { fechaInicio, fechaFin, horaInicio, horaFin, areaId },
+          reservaExistente: reserva
+        });
+        return true;
+      }
+      
+      // Verificar solapamiento de horarios
+      return (nuevaInicio < reservaFin && nuevaFin > reservaInicio);
+    });
+    
+    if (conflicto) {
+      const reservaInicio = new Date(conflicto.inicio);
+      const reservaFin = new Date(conflicto.fin);
+      
+      const esDuplicadoExacto = (
+        reservaInicio.getTime() === nuevaInicio.getTime() &&
+        reservaFin.getTime() === nuevaFin.getTime()
+      );
+      
+      let motivo = '';
+      if (esDuplicadoExacto) {
+        motivo = `🚫 Ya existe una reserva exacta en ${horaInicio}-${horaFin} el ${fechaInicio}`;
+      } else {
+        motivo = `⚡ Conflicto de horarios con reserva del ${reservaInicio.toLocaleDateString()} (${reservaInicio.toLocaleTimeString().substring(0,5)}-${reservaFin.toLocaleTimeString().substring(0,5)})`;
+      }
+      
+      return {
+        hayConflicto: true,
+        esDuplicadoExacto,
+        conflicto,
+        motivo
+      };
+    }
+    
+    return {
+      hayConflicto: false,
+      esDuplicadoExacto: false,
+      motivo: ''
+    };
+  };
+
+  // Verificar límite de reservas por usuario (máximo 3 por mes)
+  const verificarLimiteReservas = (fecha: string): { 
+    excedeLimite: boolean; 
+    reservasDelMes: number 
+  } => {
+    const fechaObj = new Date(fecha);
+    const mesActual = fechaObj.getMonth();
+    const añoActual = fechaObj.getFullYear();
+    
+    const reservasDelMes = reservas.filter(reserva => {
+      if (reserva.usuarioId !== user?.id) return false;
+      if (reserva.estado === 'CANCELLED') return false;
+      const fechaReserva = new Date(reserva.inicio);
+      return fechaReserva.getMonth() === mesActual && fechaReserva.getFullYear() === añoActual;
+    }).length;
+    
+    return {
+      excedeLimite: reservasDelMes >= 3,
+      reservasDelMes: reservasDelMes
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 🔒 VALIDACIONES ANTES DE ENVIAR AL BACKEND
+    console.log('🔍 VALIDACIÓN DE RESERVA en ReservasPage:', {
+      formData,
+      usuario: user?.email,
+      esEdicion: !!editingReserva
+    });
+    
+    // Validar campos requeridos
+    if (!formData.areaId || !formData.fechaInicio || !formData.fechaFin || !formData.horaInicio || !formData.horaFin) {
+      setError('❌ Todos los campos son obligatorios');
+      return;
+    }
+    
+    // Validar fecha pasada
+    if (esFechaPasada(formData.fechaInicio)) {
+      setError('❌ No se pueden crear reservas en fechas pasadas');
+      return;
+    }
+    
+    // Validar límite de reservas por mes (solo para nuevas reservas)
+    if (!editingReserva) {
+      const limiteInfo = verificarLimiteReservas(formData.fechaInicio);
+      if (limiteInfo.excedeLimite) {
+        setError(`❌ Límite alcanzado: ${limiteInfo.reservasDelMes}/3 reservas este mes`);
+        return;
+      }
+      
+      // Mostrar advertencia si está cerca del límite
+      if (limiteInfo.reservasDelMes >= 2) {
+        const confirmar = confirm(
+          `ℹ️ Esta será tu reserva ${limiteInfo.reservasDelMes + 1}/3 del mes. ¿Continuar?`
+        );
+        if (!confirmar) return;
+      }
+    }
+    
+    // Verificar conflictos y duplicados
+    const conflictoInfo = verificarConflictoReserva(
+      formData.areaId,
+      formData.fechaInicio,
+      formData.fechaFin,
+      formData.horaInicio,
+      formData.horaFin,
+      editingReserva?.id // Excluir la reserva actual si estamos editando
+    );
+    
+    if (conflictoInfo.hayConflicto) {
+      console.error('🚫 RESERVA BLOQUEADA en ReservasPage:', conflictoInfo.motivo);
+      
+      // Mostrar mensaje específico para duplicados exactos
+      if (conflictoInfo.esDuplicadoExacto) {
+        const areaSeleccionada = areas.find(a => a.id === formData.areaId);
+        setError(`🚫 DUPLICADO DETECTADO\n\nYa existe una reserva exacta para:\n• Fecha: ${formData.fechaInicio}\n• Horario: ${formData.horaInicio}-${formData.horaFin}\n• Área: ${areaSeleccionada?.nombre}\n\nNo se pueden crear reservas duplicadas.`);
+        return;
+      } else {
+        setError(conflictoInfo.motivo);
+        return;
+      }
+    }
+    
     try {
       const reservaData = {
         ...formData,
         totalHoras: calcularTotalHoras(),
         precioTotal: calcularPrecioTotal()
       };
+
+      console.log('🔄 Creando/editando reserva con validaciones anti-duplicado:', reservaData);
 
       if (editingReserva) {
         await apiService.updateReserva(editingReserva.id, reservaData);
@@ -97,7 +267,9 @@ const Reservas: React.FC<ReservasProps> = () => {
       await cargarDatos();
       resetForm();
       setShowModal(false);
+      setError(null); // Limpiar errores al tener éxito
     } catch (err: any) {
+      console.error('❌ Error al guardar reserva:', err);
       setError(err.response?.data?.message || 'Error al guardar la reserva');
     }
   };

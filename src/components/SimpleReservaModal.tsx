@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { X, DollarSign, User } from 'lucide-react';
-import type { AreaComun, CreateReservaDto } from '../types';
+import React, { useState, useEffect } from 'react';
+import { X, DollarSign, User, AlertTriangle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { apiService } from '../services/api';
+import type { AreaComun, CreateReservaDto, Reserva } from '../types';
 
 interface SimpleReservaModalProps {
   isOpen: boolean;
@@ -15,13 +17,55 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
   area,
   onSave
 }) => {
+  const { user } = useAuth();
   const [fecha, setFecha] = useState('');
   const [horaInicio, setHoraInicio] = useState('');
   const [horaFin, setHoraFin] = useState('');
   const [loading, setLoading] = useState(false);
   const [costo, setCosto] = useState(0);
+  const [reservas, setReservas] = useState<Reserva[]>([]);
+  const [advertenciaVisible, setAdvertenciaVisible] = useState(false);
+  const [mensajeAdvertencia, setMensajeAdvertencia] = useState('');
 
-  // Calcular costo automáticamente
+  // Cargar reservas existentes
+  useEffect(() => {
+    const cargarReservas = async () => {
+      try {
+        // SOLUCIÓN ANTI-DUPLICADOS: USER_CASUAL necesita ver TODAS las reservas para validaciones
+        let response;
+        if (user?.role === 'USER_CASUAL') {
+          console.log('👤 USER_CASUAL en modal: obteniendo TODAS las reservas para validaciones anti-duplicado');
+          response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
+        } else {
+          response = await apiService.getReservas();
+        }
+        
+        if (response && Array.isArray(response)) {
+          setReservas(response);
+        }
+      } catch (error) {
+        console.error('Error al cargar reservas:', error);
+      }
+    };
+
+    if (isOpen) {
+      cargarReservas();
+    }
+  }, [isOpen, user?.role]);
+
+  // Limpiar estado cuando se cierra el modal
+  useEffect(() => {
+    if (!isOpen) {
+      setFecha('');
+      setHoraInicio('');
+      setHoraFin('');
+      setCosto(0);
+      setAdvertenciaVisible(false);
+      setMensajeAdvertencia('');
+    }
+  }, [isOpen]);
+
+  // Calcular costo automáticamente y verificar conflictos
   React.useEffect(() => {
     if (fecha && horaInicio && horaFin) {
       const inicio = new Date(`${fecha}T${horaInicio}`);
@@ -29,8 +73,99 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
       const duracionHoras = (fin.getTime() - inicio.getTime()) / (1000 * 60 * 60);
       const costoCalculado = Math.ceil(duracionHoras * area.costoHora);
       setCosto(costoCalculado);
+
+      // Verificar conflictos y límites
+      setAdvertenciaVisible(false);
+      setMensajeAdvertencia('');
+
+      // Verificar fecha pasada
+      if (esFechaPasada(fecha, horaInicio)) {
+        setAdvertenciaVisible(true);
+        setMensajeAdvertencia('No puedes hacer reservas en fechas y horas pasadas');
+        return;
+      }
+
+      // Verificar conflictos de reserva
+      const conflicto = verificarConflictoReserva(fecha, horaInicio, horaFin, area.id);
+      if (conflicto.tieneConflicto) {
+        setAdvertenciaVisible(true);
+        if (conflicto.tipo === 'exacto') {
+          setMensajeAdvertencia('Ya existe una reserva exactamente en este horario y área');
+        } else if (conflicto.tipo === 'solapamiento') {
+          const reservaConflicto = conflicto.reservaConflicto!;
+          const inicioConflicto = new Date(reservaConflicto.inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+          const finConflicto = new Date(reservaConflicto.fin).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+          setMensajeAdvertencia(`Se solapa con reserva existente (${inicioConflicto} - ${finConflicto})`);
+        }
+        return;
+      }
+
+      // Verificar límite de reservas
+      const limite = verificarLimiteReservas(fecha);
+      if (limite.excedeLimite) {
+        setAdvertenciaVisible(true);
+        setMensajeAdvertencia(`Límite alcanzado: ${limite.reservasEnMes}/3 reservas este mes`);
+        return;
+      }
     }
-  }, [fecha, horaInicio, horaFin, area.costoHora]);
+  }, [fecha, horaInicio, horaFin, area.costoHora, area.id, reservas, user?.id]);
+
+  // Funciones de validación
+  const esFechaPasada = (fechaStr: string, horaStr: string): boolean => {
+    const fechaHora = new Date(`${fechaStr}T${horaStr}`);
+    return fechaHora < new Date();
+  };
+
+  const verificarConflictoReserva = (fecha: string, horaInicio: string, horaFin: string, areaId: number): { tieneConflicto: boolean; tipo: 'exacto' | 'solapamiento' | null; reservaConflicto?: Reserva } => {
+    const inicioNueva = new Date(`${fecha}T${horaInicio}`);
+    const finNueva = new Date(`${fecha}T${horaFin}`);
+
+    for (const reserva of reservas) {
+      // Solo verificar reservas activas
+      if (reserva.estado === 'CANCELLED') continue;
+      
+      // Solo verificar reservas de la misma área
+      if (reserva.areaId !== areaId) continue;
+
+      const inicioExistente = new Date(reserva.inicio);
+      const finExistente = new Date(reserva.fin);
+
+      // Verificar si es exactamente la misma reserva
+      if (inicioNueva.getTime() === inicioExistente.getTime() && 
+          finNueva.getTime() === finExistente.getTime()) {
+        return { tieneConflicto: true, tipo: 'exacto', reservaConflicto: reserva };
+      }
+
+      // Verificar solapamiento de horarios
+      if (inicioNueva < finExistente && finNueva > inicioExistente) {
+        return { tieneConflicto: true, tipo: 'solapamiento', reservaConflicto: reserva };
+      }
+    }
+
+    return { tieneConflicto: false, tipo: null };
+  };
+
+  const verificarLimiteReservas = (fecha: string): { excedeLimite: boolean; reservasEnMes: number } => {
+    if (!user?.id) return { excedeLimite: false, reservasEnMes: 0 };
+
+    const fechaSeleccionada = new Date(fecha);
+    const inicioMes = new Date(fechaSeleccionada.getFullYear(), fechaSeleccionada.getMonth(), 1);
+    const finMes = new Date(fechaSeleccionada.getFullYear(), fechaSeleccionada.getMonth() + 1, 0);
+
+    const reservasDelMes = reservas.filter(reserva => {
+      if (reserva.estado === 'CANCELLED') return false;
+      if (reserva.usuarioId !== user.id) return false;
+      
+      const fechaReserva = new Date(reserva.inicio);
+      return fechaReserva >= inicioMes && fechaReserva <= finMes;
+    });
+
+    const LIMITE_RESERVAS = 3;
+    return {
+      excedeLimite: reservasDelMes.length >= LIMITE_RESERVAS,
+      reservasEnMes: reservasDelMes.length
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +180,34 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
 
     if (inicio >= fin) {
       alert('La hora de fin debe ser posterior a la hora de inicio');
+      return;
+    }
+
+    // Validar que la fecha no sea en el pasado
+    if (esFechaPasada(fecha, horaInicio)) {
+      alert('No puedes hacer reservas en fechas y horas pasadas');
+      return;
+    }
+
+    // Verificar conflictos de reserva
+    const conflicto = verificarConflictoReserva(fecha, horaInicio, horaFin, area.id);
+    if (conflicto.tieneConflicto) {
+      if (conflicto.tipo === 'exacto') {
+        alert('Ya existe una reserva exactamente en la misma fecha, hora y área. Por favor selecciona otro horario.');
+        return;
+      } else if (conflicto.tipo === 'solapamiento') {
+        const reservaConflicto = conflicto.reservaConflicto!;
+        const inicioConflicto = new Date(reservaConflicto.inicio).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const finConflicto = new Date(reservaConflicto.fin).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        alert(`El horario seleccionado se solapa con una reserva existente de ${inicioConflicto} a ${finConflicto}. Por favor selecciona otro horario.`);
+        return;
+      }
+    }
+
+    // Verificar límite de reservas por mes
+    const limite = verificarLimiteReservas(fecha);
+    if (limite.excedeLimite) {
+      alert(`Has alcanzado el límite de 3 reservas por mes. Actualmente tienes ${limite.reservasEnMes} reservas este mes.`);
       return;
     }
 
@@ -66,6 +229,8 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
       setHoraInicio('');
       setHoraFin('');
       setCosto(0);
+      setAdvertenciaVisible(false);
+      setMensajeAdvertencia('');
       onClose();
     } catch (error) {
       console.error('Error al crear reserva:', error);
@@ -111,6 +276,23 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
                   <p className="text-sm text-gray-600 mt-2">{area.descripcion}</p>
                 )}
               </div>
+
+              {/* Advertencia de conflictos */}
+              {advertenciaVisible && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                  <div className="flex items-start space-x-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">
+                        Advertencia
+                      </p>
+                      <p className="text-sm text-amber-700 mt-1">
+                        {mensajeAdvertencia}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -172,8 +354,13 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
                 <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
                   <button
                     type="submit"
-                    disabled={loading || costo <= 0}
-                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary-600 text-base font-medium text-white hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm disabled:bg-gray-400"
+                    disabled={loading || costo <= 0 || advertenciaVisible}
+                    className={`w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 text-base font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm ${
+                      loading || costo <= 0 || advertenciaVisible
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-primary-600 hover:bg-primary-700'
+                    }`}
+                    title={advertenciaVisible ? 'No se puede reservar: ' + mensajeAdvertencia : ''}
                   >
                     {loading ? 'Creando...' : 'Confirmar Reserva'}
                   </button>

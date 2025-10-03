@@ -8,7 +8,7 @@ import SimpleReservaModal from '../../components/SimpleReservaModal';
 import CalendarioAreasComunes from '../../components/CalendarioAreasComunes';
 
 import { apiService } from '../../services/api';
-import type { AreaComun, CreateAreaComunDto, UpdateAreaComunDto, CreateReservaDto } from '../../types';
+import type { AreaComun, CreateAreaComunDto, UpdateAreaComunDto, CreateReservaDto, Reserva } from '../../types';
 
 const AreasComunesSuperPage = () => {
   const { user, logout } = useAuth();
@@ -23,7 +23,7 @@ const AreasComunesSuperPage = () => {
   const { areas, loading: areasLoading, createArea, updateArea, deleteArea, fetchAreas } = useAreasComunes();
   
   // Estado para reservas
-  const [reservas, setReservas] = useState<any[]>([]);
+  const [reservas, setReservas] = useState<Reserva[]>([]);
 
   // Función para cargar todas las reservas
   const fetchAllReservas = async () => {
@@ -31,10 +31,39 @@ const AreasComunesSuperPage = () => {
       console.log('🔄 Cargando todas las reservas...');
       const response = await apiService.getReservas();
       console.log('📊 Reservas cargadas:', response);
-      setReservas(response.data);
+      setReservas(response.data || response);
     } catch (error) {
       console.error('❌ Error al cargar reservas:', error);
     }
+  };
+
+  // Función de validación anti-duplicados
+  const verificarConflictoReserva = (areaId: number, inicio: string, fin: string): { tieneConflicto: boolean; mensaje: string } => {
+    const inicioNueva = new Date(inicio);
+    const finNueva = new Date(fin);
+
+    for (const reserva of reservas) {
+      if (reserva.estado === 'CANCELLED') continue;
+      if (reserva.areaId !== areaId) continue;
+
+      const inicioExistente = new Date(reserva.inicio);
+      const finExistente = new Date(reserva.fin);
+
+      // Verificar duplicado exacto
+      if (inicioNueva.getTime() === inicioExistente.getTime() && 
+          finNueva.getTime() === finExistente.getTime()) {
+        return { tieneConflicto: true, mensaje: 'Ya existe una reserva exactamente en este horario y área' };
+      }
+
+      // Verificar solapamiento
+      if (inicioNueva < finExistente && finNueva > inicioExistente) {
+        const inicioConflicto = inicioExistente.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const finConflicto = finExistente.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        return { tieneConflicto: true, mensaje: `Se solapa con reserva existente (${inicioConflicto} - ${finConflicto})` };
+      }
+    }
+
+    return { tieneConflicto: false, mensaje: '' };
   };
   
   // Estados del modal
@@ -69,8 +98,8 @@ const AreasComunesSuperPage = () => {
   const getReservasActivasPorArea = (areaId: number) => {
     return reservas.filter(reserva => 
       reserva.areaId === areaId && 
-      reserva.estado !== 'CANCELADA' && 
-      new Date(reserva.fechaReserva) >= new Date()
+      reserva.estado !== 'CANCELLED' && 
+      new Date(reserva.inicio) >= new Date()
     ).length;
   };
 
@@ -147,6 +176,13 @@ const AreasComunesSuperPage = () => {
   const handleCreateReserva = async (reservaData: CreateReservaDto) => {
     try {
       console.log('🔄 Creating reserva with Stripe (Super User):', reservaData);
+      
+      // 🛡️ Validación anti-duplicados
+      const conflicto = verificarConflictoReserva(reservaData.areaId, reservaData.inicio, reservaData.fin);
+      if (conflicto.tieneConflicto) {
+        alert(`❌ No se puede crear la reserva: ${conflicto.mensaje}`);
+        return;
+      }
       
       // Crear reserva con integración de Stripe
       const response = await apiService.createReservaWithStripe(reservaData);

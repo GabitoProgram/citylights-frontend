@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, MapPin, Users, Clock, Search, Menu, X, LogOut, Home, Building2, CreditCard, Receipt, Bell } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -6,7 +6,7 @@ import { useAreasComunes } from '../../hooks/useAreasComunes';
 import SimpleReservaModal from '../../components/SimpleReservaModal';
 import CalendarioAreasComunes from '../../components/CalendarioAreasComunes';
 import { apiService } from '../../services/api';
-import type { AreaComun, CreateReservaDto } from '../../types';
+import type { AreaComun, CreateReservaDto, Reserva } from '../../types';
 
 const AreasComunesUserPage = () => {
   const { user, logout } = useAuth();
@@ -17,6 +17,53 @@ const AreasComunesUserPage = () => {
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [areaToReserve, setAreaToReserve] = useState<AreaComun | null>(null);
   const [vistaActual, setVistaActual] = useState<'calendario' | 'areas'>('calendario');
+  const [reservas, setReservas] = useState<Reserva[]>([]);
+
+  // Cargar reservas existentes
+  useEffect(() => {
+    const cargarReservas = async () => {
+      try {
+        // SOLUCIÓN ANTI-DUPLICADOS: USER_CASUAL necesita ver TODAS las reservas para validaciones
+        console.log('👤 USER_CASUAL: obteniendo TODAS las reservas para validaciones anti-duplicado');
+        const response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
+        if (response && Array.isArray(response)) {
+          setReservas(response);
+        }
+      } catch (error) {
+        console.error('Error al cargar reservas:', error);
+      }
+    };
+    cargarReservas();
+  }, []);
+
+  // Función de validación anti-duplicados
+  const verificarConflictoReserva = (areaId: number, inicio: string, fin: string): { tieneConflicto: boolean; mensaje: string } => {
+    const inicioNueva = new Date(inicio);
+    const finNueva = new Date(fin);
+
+    for (const reserva of reservas) {
+      if (reserva.estado === 'CANCELLED') continue;
+      if (reserva.areaId !== areaId) continue;
+
+      const inicioExistente = new Date(reserva.inicio);
+      const finExistente = new Date(reserva.fin);
+
+      // Verificar duplicado exacto
+      if (inicioNueva.getTime() === inicioExistente.getTime() && 
+          finNueva.getTime() === finExistente.getTime()) {
+        return { tieneConflicto: true, mensaje: 'Ya existe una reserva exactamente en este horario y área' };
+      }
+
+      // Verificar solapamiento
+      if (inicioNueva < finExistente && finNueva > inicioExistente) {
+        const inicioConflicto = inicioExistente.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const finConflicto = finExistente.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        return { tieneConflicto: true, mensaje: `Se solapa con reserva existente (${inicioConflicto} - ${finConflicto})` };
+      }
+    }
+
+    return { tieneConflicto: false, mensaje: '' };
+  };
 
   // Datos de áreas (ahora viene del backend)
   const areasComunes = areas;
@@ -40,6 +87,13 @@ const AreasComunesUserPage = () => {
   const handleCreateReserva = async (reservaData: CreateReservaDto) => {
     try {
       console.log('💳 Creating reserva with Stripe (User):', reservaData);
+      
+      // 🛡️ Validación anti-duplicados
+      const conflicto = verificarConflictoReserva(reservaData.areaId, reservaData.inicio, reservaData.fin);
+      if (conflicto.tieneConflicto) {
+        alert(`❌ No se puede crear la reserva: ${conflicto.mensaje}`);
+        return;
+      }
       
       // Crear reserva con integración de Stripe
       const response = await apiService.createReservaWithStripe(reservaData);

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Clock, Users, MapPin, Plus, Trash2, Edit3 } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAreasComunes } from '../../hooks/useAreasComunes';
 import { apiService } from '../../services/api';
-import type { AreaComun } from '../../types';
 
 // Tipos para el calendario
 interface ReservaCalendario {
@@ -38,14 +37,14 @@ const CalendarioAreasComunes: React.FC<Props> = ({
   mostrarSoloCalendario = false 
 }) => {
   const { user } = useAuth();
-  const { areas, loading: areasLoading } = useAreasComunes();
+  const { areas } = useAreasComunes();
   const [fechaActual, setFechaActual] = useState(new Date());
   const [areaSeleccionada, setAreaSeleccionada] = useState('');
   const [reservas, setReservas] = useState<ReservaCalendario[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [fechaSeleccionada, setFechaSeleccionada] = useState<string>('');
   const [horaSeleccionada, setHoraSeleccionada] = useState<string>('');
-  const [reservaSeleccionada, setReservaSeleccionada] = useState<ReservaCalendario | null>(null);
+  const [, setReservaSeleccionada] = useState<ReservaCalendario | null>(null);
   const [loadingReservas, setLoadingReservas] = useState(false);
 
   // Función para obtener emoji según el nombre del área
@@ -96,9 +95,18 @@ const CalendarioAreasComunes: React.FC<Props> = ({
       console.log('🔄 Cargando reservas... - PASO 2');
       console.log('🔑 Usuario actual:', user);
       
-      // Solo hacer UNA llamada al API para evitar rate limiting
-      console.log('📞 Llamando a apiService.getReservas() - PASO 4');
-      const response = await apiService.getReservas();
+      // SOLUCIÓN ANTI-DUPLICADOS: USER_CASUAL necesita ver TODAS las reservas para validaciones
+      console.log('📞 Determinando endpoint según rol de usuario - PASO 3');
+      let response;
+      if (user?.role === 'USER_CASUAL') {
+        console.log('� USER_CASUAL detectado: usando endpoint de reportes para obtener TODAS las reservas');
+        response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
+        // Convertir respuesta a formato esperado
+        response = { data: response, status: 200 };
+      } else {
+        console.log('👤 Usuario ADMIN/SUPER: usando endpoint normal');
+        response = await apiService.getReservas();
+      }
       
       console.log('🚨 DEBUGGING RESPUESTA POR ROL:');
       console.log('  👤 Rol actual:', user?.role);
@@ -245,6 +253,101 @@ const CalendarioAreasComunes: React.FC<Props> = ({
     '18:00-20:00',
     '20:00-22:00'
   ];
+
+  // 🔒 VALIDACIONES PARA PREVENIR DUPLICADOS
+  
+  // Verificar si la fecha es pasada
+  const esFechaPasada = (fecha: string): boolean => {
+    const fechaSeleccionada = new Date(fecha);
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Resetear horas para comparar solo fechas
+    return fechaSeleccionada < hoy;
+  };
+
+  // Verificar solapamiento de horarios y reservas duplicadas exactas
+  const verificarSolapamiento = (fecha: string, horaInicio: string, horaFin: string): { 
+    hayConflicto: boolean; 
+    conflicto?: ReservaCalendario;
+    esDuplicadoExacto: boolean;
+  } => {
+    const horaInicioNum = parseInt(horaInicio.replace(':', ''));
+    const horaFinNum = parseInt(horaFin.replace(':', ''));
+    
+    const conflicto = reservas.find(reserva => {
+      if (reserva.fecha !== fecha || reserva.areaId !== areaSeleccionada) return false;
+      
+      const reservaInicioNum = parseInt(reserva.horaInicio.replace(':', ''));
+      const reservaFinNum = parseInt(reserva.horaFin.replace(':', ''));
+      
+      // 🚫 VERIFICAR DUPLICADO EXACTO: misma fecha, área, hora inicio y hora fin
+      const esDuplicadoExacto = (
+        reserva.fecha === fecha &&
+        reserva.areaId === areaSeleccionada &&
+        reserva.horaInicio === horaInicio &&
+        reserva.horaFin === horaFin &&
+        reserva.estado !== 'cancelada'
+      );
+      
+      if (esDuplicadoExacto) {
+        console.log('🚫 DUPLICADO EXACTO DETECTADO:', {
+          fecha,
+          areaId: areaSeleccionada,
+          horaInicio,
+          horaFin,
+          reservaExistente: reserva
+        });
+        return true;
+      }
+      
+      // Verificar solapamiento: nueva reserva inicia antes de que termine otra, o termina después de que inicie otra
+      return (horaInicioNum < reservaFinNum && horaFinNum > reservaInicioNum);
+    });
+    
+    // Verificar si es duplicado exacto
+    const esDuplicadoExacto = conflicto ? (
+      conflicto.fecha === fecha &&
+      conflicto.areaId === areaSeleccionada &&
+      conflicto.horaInicio === horaInicio &&
+      conflicto.horaFin === horaFin &&
+      conflicto.estado !== 'cancelada'
+    ) : false;
+    
+    return {
+      hayConflicto: !!conflicto,
+      conflicto: conflicto,
+      esDuplicadoExacto: esDuplicadoExacto
+    };
+  };
+
+  // Verificar límite de reservas por usuario (máximo 3 por mes)
+  const verificarLimiteReservas = (fecha: string): { 
+    excedeLimite: boolean; 
+    reservasDelMes: number 
+  } => {
+    const fechaObj = new Date(fecha);
+    const mesActual = fechaObj.getMonth();
+    const añoActual = fechaObj.getFullYear();
+    
+    const reservasDelMes = reservas.filter(reserva => {
+      if (reserva.usuarioId !== user?.id) return false;
+      const fechaReserva = new Date(reserva.fecha);
+      return fechaReserva.getMonth() === mesActual && fechaReserva.getFullYear() === añoActual;
+    }).length;
+    
+    return {
+      excedeLimite: reservasDelMes >= 3,
+      reservasDelMes: reservasDelMes
+    };
+  };
+
+  // Verificar si el usuario ya tiene una reserva en la misma fecha
+  const tieneReservaEnFecha = (fecha: string): boolean => {
+    return reservas.some(reserva => 
+      reserva.fecha === fecha && 
+      reserva.usuarioId === user?.id &&
+      reserva.estado !== 'cancelada'
+    );
+  };
 
   // Datos de ejemplo para el calendario
   // COMENTADO: Este useEffect causaba llamadas duplicadas
@@ -414,9 +517,15 @@ const CalendarioAreasComunes: React.FC<Props> = ({
   // Obtener el área actual
   const areaActual = areasDisponibles.find(area => area.id === areaSeleccionada);
 
-  // Manejar clic en día
+  // Manejar clic en día con validaciones
   const manejarClicDia = (dia: number) => {
     const fecha = formatearFecha(dia);
+    
+    // Verificar si la fecha es pasada
+    if (esFechaPasada(fecha)) {
+      alert('❌ No se pueden crear reservas en fechas pasadas');
+      return;
+    }
     
     setFechaSeleccionada(fecha);
     setReservaSeleccionada(null);
@@ -435,26 +544,95 @@ const CalendarioAreasComunes: React.FC<Props> = ({
     setFechaActual(nuevaFecha);
   };
 
-  // Verificar disponibilidad de horario
-  const estaDisponible = (fecha: string, horario: string) => {
-    const [inicio] = horario.split('-');
-    return !reservas.some(reserva => 
-      reserva.fecha === fecha && 
-      reserva.areaId === areaSeleccionada && 
-      reserva.horaInicio === inicio
-    );
+
+
+  // Función mejorada para obtener información de disponibilidad
+  const obtenerInfoDisponibilidad = (fecha: string, horario: string) => {
+    const [inicio, fin] = horario.split('-');
+    
+    // Verificar todas las validaciones
+    const fechaPasada = esFechaPasada(fecha);
+    const solapamiento = verificarSolapamiento(fecha, inicio, fin);
+    const limiteReservas = verificarLimiteReservas(fecha);
+    const yaReservadoEnFecha = tieneReservaEnFecha(fecha);
+    
+    let disponible = true;
+    let motivo = '';
+    
+    if (fechaPasada) {
+      disponible = false;
+      motivo = '❌ No se puede reservar en fechas pasadas';
+    } else if (solapamiento.esDuplicadoExacto) {
+      disponible = false;
+      motivo = `🚫 Ya existe una reserva exacta en ${inicio}-${fin} por ${solapamiento.conflicto?.usuarioNombre}`;
+    } else if (solapamiento.hayConflicto) {
+      disponible = false;
+      motivo = `❌ Conflicto de horarios con reserva de ${solapamiento.conflicto?.usuarioNombre} (${solapamiento.conflicto?.horaInicio}-${solapamiento.conflicto?.horaFin})`;
+    } else if (limiteReservas.excedeLimite) {
+      disponible = false;
+      motivo = `❌ Límite alcanzado: ${limiteReservas.reservasDelMes}/3 reservas este mes`;
+    }
+    
+    return {
+      disponible,
+      motivo,
+      fechaPasada,
+      solapamiento: solapamiento.hayConflicto,
+      esDuplicadoExacto: solapamiento.esDuplicadoExacto,
+      excedeLimite: limiteReservas.excedeLimite,
+      reservasDelMes: limiteReservas.reservasDelMes,
+      yaReservadoEnFecha
+    };
   };
 
-  // Crear nueva reserva
+  // Crear nueva reserva con validaciones completas
   const crearReserva = async () => {
     if (!horaSeleccionada || !fechaSeleccionada) {
-      alert('Por favor selecciona una fecha y hora');
+      alert('❌ Por favor selecciona una fecha y hora');
       return;
     }
 
-    try {
-      const [inicio, fin] = horaSeleccionada.split('-');
+    // 🔒 VALIDACIONES ANTES DE ENVIAR AL BACKEND
+    const [inicio, fin] = horaSeleccionada.split('-');
+    const infoDisponibilidad = obtenerInfoDisponibilidad(fechaSeleccionada, horaSeleccionada);
+    
+    console.log('🔍 VALIDACIÓN DE RESERVA:', {
+      fecha: fechaSeleccionada,
+      horario: horaSeleccionada,
+      area: areaSeleccionada,
+      usuario: user?.email,
+      infoDisponibilidad: infoDisponibilidad
+    });
+    
+    if (!infoDisponibilidad.disponible) {
+      console.error('🚫 RESERVA BLOQUEADA:', infoDisponibilidad.motivo);
       
+      // Mostrar mensaje específico para duplicados exactos
+      if (infoDisponibilidad.esDuplicadoExacto) {
+        alert(`🚫 DUPLICADO DETECTADO\n\nYa existe una reserva exacta para:\n• Fecha: ${fechaSeleccionada}\n• Horario: ${horaSeleccionada}\n• Área: ${areaActual?.nombre}\n\nNo se pueden crear reservas duplicadas.`);
+      } else {
+        alert(infoDisponibilidad.motivo);
+      }
+      return;
+    }
+    
+    // Confirmación adicional para reservas del mismo día
+    if (infoDisponibilidad.yaReservadoEnFecha) {
+      const confirmar = confirm(
+        `⚠️ Ya tienes una reserva para el ${fechaSeleccionada}. ¿Deseas crear otra reserva para la misma fecha?`
+      );
+      if (!confirmar) return;
+    }
+    
+    // Mostrar información de límite de reservas
+    if (infoDisponibilidad.reservasDelMes >= 2) {
+      const confirmar = confirm(
+        `ℹ️ Esta será tu reserva ${infoDisponibilidad.reservasDelMes + 1}/3 del mes. ¿Continuar?`
+      );
+      if (!confirmar) return;
+    }
+
+    try {
       // Crear objeto de reserva para el backend
       const nuevaReservaData = {
         areaComunId: parseInt(areaSeleccionada), // Convertir a número
@@ -465,7 +643,8 @@ const CalendarioAreasComunes: React.FC<Props> = ({
         observaciones: `Reserva desde calendario - ${areaActual?.nombre}`
       };
 
-      console.log('🔄 Creando reserva:', nuevaReservaData);
+      console.log('🔄 Creando reserva con validaciones anti-duplicado:', nuevaReservaData);
+      console.log('✅ Validaciones pasadas:', infoDisponibilidad);
       
       // Llamar al API para crear la reserva con Stripe
       const response = await apiService.createReservaWithStripe(nuevaReservaData);
@@ -551,9 +730,9 @@ const CalendarioAreasComunes: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Leyenda */}
+            {/* Leyenda mejorada */}
             <div className="bg-white rounded-lg p-4">
-              <h4 className="font-medium text-gray-800 mb-3">Leyenda</h4>
+              <h4 className="font-medium text-gray-800 mb-3">Leyenda del Calendario</h4>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-green-50 border-2 border-green-200 rounded"></div>
@@ -571,6 +750,10 @@ const CalendarioAreasComunes: React.FC<Props> = ({
                   <div className="w-4 h-4 bg-purple-50 border-2 border-purple-500 rounded"></div>
                   <span>Hoy</span>
                 </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gray-100 border-2 border-gray-300 rounded opacity-50"></div>
+                  <span>Fecha Pasada</span>
+                </div>
                 <hr className="my-2" />
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
@@ -579,6 +762,13 @@ const CalendarioAreasComunes: React.FC<Props> = ({
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                   <span>Ocupado por Otros</span>
+                </div>
+                <hr className="my-2" />
+                <div className="text-xs text-gray-600">
+                  <p className="mb-1">🔒 <strong>Límites:</strong></p>
+                  <p>• Máximo 3 reservas por mes</p>
+                  <p>• No solapamiento de horarios</p>
+                  <p>• No se permiten fechas pasadas</p>
                 </div>
               </div>
             </div>
@@ -631,61 +821,84 @@ const CalendarioAreasComunes: React.FC<Props> = ({
               const estadoDia = obtenerEstadoDia(fecha);
               const colorDia = obtenerColorDia(estadoDia);
               const esHoyDia = esHoy(dia);
+              const fechaPasada = esFechaPasada(fecha);
+              const limiteInfo = verificarLimiteReservas(fecha);
 
               return (
                 <div
                   key={`dia-${fechaActual.getMonth()}-${dia}`}
                   onClick={() => manejarClicDia(dia)}
-                  className={`aspect-square border-2 rounded-lg p-2 cursor-pointer transition-all duration-200 hover:scale-105 hover:shadow-md ${
-                    esHoyDia
-                      ? 'border-purple-500 border-4 bg-purple-50'
-                      : colorDia
+                  className={`aspect-square border-2 rounded-lg p-2 transition-all duration-200 hover:scale-105 hover:shadow-md ${
+                    fechaPasada
+                      ? 'border-gray-300 bg-gray-100 cursor-not-allowed opacity-50'
+                      : esHoyDia
+                      ? 'border-purple-500 border-4 bg-purple-50 cursor-pointer'
+                      : `${colorDia} cursor-pointer`
                   }`}
+                  title={fechaPasada ? 'Fecha pasada - No disponible' : `${reservasDelDia.length} reservas`}
                 >
                   <div className="h-full flex flex-col">
-                    <div className={`font-medium text-sm ${esHoyDia ? 'text-purple-600' : 'text-gray-700'}`}>
+                    <div className={`font-medium text-sm ${
+                      fechaPasada 
+                        ? 'text-gray-400' 
+                        : esHoyDia 
+                        ? 'text-purple-600' 
+                        : 'text-gray-700'
+                    }`}>
                       {dia}
+                      {limiteInfo.excedeLimite && !fechaPasada && (
+                        <span className="text-xs block text-red-500">Límite</span>
+                      )}
                     </div>
                     
-                    {/* Indicador de estado del día */}
-                    <div className="flex-1 mt-1">
-                      {estadoDia !== 'libre' && (
-                        <div className="text-center mb-1">
-                          <span className={`inline-block w-2 h-2 rounded-full ${
-                            estadoDia === 'completo' ? 'bg-red-500' : 'bg-yellow-500'
-                          }`}></span>
-                        </div>
-                      )}
-                      
-                      {/* Lista de reservas del día */}
-                      {reservasDelDia.slice(0, 2).map((reserva, idx) => (
-                        <div
-                          key={`reserva-${reserva.id}-${idx}`}
-                          className={`text-xs p-1 rounded mb-1 truncate ${
-                            reserva.tipo === 'propia'
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-red-100 text-red-800'
-                          }`}
-                          title={`${reserva.horaInicio}-${reserva.horaFin} - ${reserva.usuarioNombre}`}
-                        >
-                          {reserva.horaInicio} {reserva.tipo === 'propia' ? '(Tuya)' : reserva.usuarioNombre}
-                        </div>
-                      ))}
-                      
-                      {/* Mostrar "+ más" si hay más reservas */}
-                      {reservasDelDia.length > 2 && (
-                        <div className="text-xs text-gray-500 text-center">
-                          +{reservasDelDia.length - 2} más
-                        </div>
-                      )}
-                      
-                      {/* Mostrar estado si no hay reservas */}
-                      {reservasDelDia.length === 0 && (
-                        <div className="text-xs text-green-600 text-center mt-2">
-                          Libre
-                        </div>
-                      )}
-                    </div>
+                    {!fechaPasada && (
+                      <div className="flex-1 mt-1">
+                        {/* Indicador de estado del día */}
+                        {estadoDia !== 'libre' && (
+                          <div className="text-center mb-1">
+                            <span className={`inline-block w-2 h-2 rounded-full ${
+                              estadoDia === 'completo' ? 'bg-red-500' : 'bg-yellow-500'
+                            }`}></span>
+                          </div>
+                        )}
+                        
+                        {/* Lista de reservas del día */}
+                        {reservasDelDia.slice(0, 2).map((reserva, idx) => (
+                          <div
+                            key={`reserva-${reserva.id}-${idx}`}
+                            className={`text-xs p-1 rounded mb-1 truncate ${
+                              reserva.tipo === 'propia'
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                            title={`${reserva.horaInicio}-${reserva.horaFin} - ${reserva.usuarioNombre}`}
+                          >
+                            {reserva.horaInicio} {reserva.tipo === 'propia' ? '(Tuya)' : reserva.usuarioNombre}
+                          </div>
+                        ))}
+                        
+                        {/* Mostrar "+ más" si hay más reservas */}
+                        {reservasDelDia.length > 2 && (
+                          <div className="text-xs text-gray-500 text-center">
+                            +{reservasDelDia.length - 2} más
+                          </div>
+                        )}
+                        
+                        {/* Mostrar estado si no hay reservas */}
+                        {reservasDelDia.length === 0 && (
+                          <div className="text-xs text-green-600 text-center mt-2">
+                            Libre
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Mostrar indicador para fechas pasadas */}
+                    {fechaPasada && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <span className="text-xs text-gray-400">Pasada</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -735,11 +948,37 @@ const CalendarioAreasComunes: React.FC<Props> = ({
                   );
                 })()}</div>
 
-              {/* Lista de horarios */}
+              {/* Lista de horarios con validaciones mejoradas */}
               <div className="space-y-2 mb-6">
                 <h4 className="font-medium text-gray-700">Horarios disponibles:</h4>
+                
+                {/* Mostrar advertencias si es necesario */}
+                {esFechaPasada(fechaSeleccionada) && (
+                  <div className="p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
+                    ⚠️ No se pueden crear reservas en fechas pasadas
+                  </div>
+                )}
+                
+                {(() => {
+                  const limiteInfo = verificarLimiteReservas(fechaSeleccionada);
+                  if (limiteInfo.excedeLimite) {
+                    return (
+                      <div className="p-3 bg-yellow-100 border border-yellow-300 rounded-lg text-yellow-700 text-sm">
+                        ⚠️ Has alcanzado el límite de {limiteInfo.reservasDelMes}/3 reservas este mes
+                      </div>
+                    );
+                  } else if (limiteInfo.reservasDelMes >= 2) {
+                    return (
+                      <div className="p-3 bg-blue-100 border border-blue-300 rounded-lg text-blue-700 text-sm">
+                        ℹ️ Tienes {limiteInfo.reservasDelMes}/3 reservas este mes
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+                
                 {horariosDisponibles.map((horario) => {
-                  const disponible = estaDisponible(fechaSeleccionada, horario);
+                  const infoDisponibilidad = obtenerInfoDisponibilidad(fechaSeleccionada, horario);
                   const reservaEnHorario = reservas.find(r => 
                     r.fecha === fechaSeleccionada && 
                     r.areaId === areaSeleccionada && 
@@ -749,24 +988,41 @@ const CalendarioAreasComunes: React.FC<Props> = ({
                   return (
                     <div
                       key={horario}
-                      onClick={() => disponible && setHoraSeleccionada(horario)}
-                      className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      onClick={() => infoDisponibilidad.disponible && setHoraSeleccionada(horario)}
+                      className={`p-3 rounded-lg border-2 transition-all ${
                         horaSeleccionada === horario
-                          ? 'border-blue-500 bg-blue-50'
-                          : disponible
-                          ? 'border-green-500 bg-green-50 hover:bg-green-100'
+                          ? 'border-blue-500 bg-blue-50 cursor-pointer'
+                          : infoDisponibilidad.disponible
+                          ? 'border-green-500 bg-green-50 hover:bg-green-100 cursor-pointer'
                           : 'border-red-500 bg-red-50 cursor-not-allowed'
                       }`}
+                      title={!infoDisponibilidad.disponible ? infoDisponibilidad.motivo : 'Hacer clic para seleccionar'}
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{horario}</span>
-                        {!disponible && reservaEnHorario && (
-                          <span className="text-sm text-red-600">
-                            {reservaEnHorario.tipo === 'propia' ? 'Tu reserva' : `Ocupado: ${reservaEnHorario.usuarioNombre}`}
+                        
+                        {/* Mostrar información de estado */}
+                        {!infoDisponibilidad.disponible ? (
+                          <div className="text-right">
+                            {reservaEnHorario ? (
+                              <span className="text-sm text-red-600">
+                                {reservaEnHorario.tipo === 'propia' ? '🔒 Tu reserva' : `👤 ${reservaEnHorario.usuarioNombre}`}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-red-600">
+                                {infoDisponibilidad.esDuplicadoExacto ? '🚫 Duplicado exacto' :
+                                 infoDisponibilidad.fechaPasada ? '📅 Fecha pasada' :
+                                 infoDisponibilidad.excedeLimite ? '🚫 Límite alcanzado' :
+                                 infoDisponibilidad.yaReservadoEnFecha ? '⚠️ Ya reservado hoy' :
+                                 infoDisponibilidad.solapamiento ? '⚡ Conflicto de horarios' :
+                                 '❌ No disponible'}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-green-600 flex items-center gap-1">
+                            ✅ Disponible
                           </span>
-                        )}
-                        {disponible && (
-                          <span className="text-sm text-green-600">Disponible</span>
                         )}
                       </div>
                     </div>
@@ -782,15 +1038,34 @@ const CalendarioAreasComunes: React.FC<Props> = ({
                 >
                   Cancelar
                 </button>
-                {horaSeleccionada && estaDisponible(fechaSeleccionada, horaSeleccionada) && (
-                  <button
-                    onClick={crearReserva}
-                    className="flex-1 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Reservar
-                  </button>
-                )}
+                {(() => {
+                  if (!horaSeleccionada) return null;
+                  
+                  const infoDisponibilidad = obtenerInfoDisponibilidad(fechaSeleccionada, horaSeleccionada);
+                  
+                  if (infoDisponibilidad.disponible) {
+                    return (
+                      <button
+                        onClick={crearReserva}
+                        className="flex-1 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2 transition-all transform hover:scale-105"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Reservar {horaSeleccionada}
+                      </button>
+                    );
+                  } else {
+                    return (
+                      <button
+                        disabled
+                        className="flex-1 py-2 px-4 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed flex items-center justify-center gap-2"
+                        title={infoDisponibilidad.motivo}
+                      >
+                        <Plus className="h-4 w-4" />
+                        No disponible
+                      </button>
+                    );
+                  }
+                })()}
               </div>
             </div>
           </div>
