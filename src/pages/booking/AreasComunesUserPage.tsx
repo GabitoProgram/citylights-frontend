@@ -25,9 +25,9 @@ const AreasComunesUserPage = () => {
       try {
         // SOLUCIÓN ANTI-DUPLICADOS: USER_CASUAL necesita ver TODAS las reservas para validaciones
         console.log('👤 USER_CASUAL: obteniendo TODAS las reservas para validaciones anti-duplicado');
-        const response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
-        if (response && Array.isArray(response)) {
-          setReservas(response);
+        const response = await apiService.getAllReservasForVisualization(); // Método específico para obtener todas las reservas
+        if (response.data && Array.isArray(response.data)) {
+          setReservas(response.data);
         }
       } catch (error) {
         console.error('Error al cargar reservas:', error);

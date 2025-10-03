@@ -35,12 +35,15 @@ const SimpleReservaModal: React.FC<SimpleReservaModalProps> = ({
         let response;
         if (user?.role === 'USER_CASUAL') {
           console.log('👤 USER_CASUAL en modal: obteniendo TODAS las reservas para validaciones anti-duplicado');
-          response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
+          response = await apiService.getAllReservasForVisualization(); // Método específico para obtener todas las reservas
         } else {
           response = await apiService.getReservas();
         }
         
-        if (response && Array.isArray(response)) {
+        if (response?.data && Array.isArray(response.data)) {
+          setReservas(response.data);
+        } else if (response && Array.isArray(response)) {
+          // Fallback para compatibilidad
           setReservas(response);
         }
       } catch (error) {

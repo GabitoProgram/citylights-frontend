@@ -99,10 +99,8 @@ const CalendarioAreasComunes: React.FC<Props> = ({
       console.log('📞 Determinando endpoint según rol de usuario - PASO 3');
       let response;
       if (user?.role === 'USER_CASUAL') {
-        console.log('� USER_CASUAL detectado: usando endpoint de reportes para obtener TODAS las reservas');
-        response = await apiService.getReportesIngresos(); // Este endpoint devuelve TODAS las reservas
-        // Convertir respuesta a formato esperado
-        response = { data: response, status: 200 };
+        console.log('👤 USER_CASUAL detectado: usando método especial para obtener TODAS las reservas');
+        response = await apiService.getAllReservasForVisualization(); // Método específico para obtener todas las reservas
       } else {
         console.log('👤 Usuario ADMIN/SUPER: usando endpoint normal');
         response = await apiService.getReservas();
@@ -167,11 +165,26 @@ const CalendarioAreasComunes: React.FC<Props> = ({
         .map((reserva: any) => {
           const fechaInicio = new Date(reserva.inicio);
           const fechaFin = new Date(reserva.fin);
+          
+          // 🕐 CORRECCIÓN DE ZONA HORARIA: Usar hora local en lugar de UTC
+          const formatoFecha = (fecha: Date) => {
+            const año = fecha.getFullYear();
+            const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+            const dia = String(fecha.getDate()).padStart(2, '0');
+            return `${año}-${mes}-${dia}`;
+          };
+          
+          const formatoHora = (fecha: Date) => {
+            const horas = String(fecha.getHours()).padStart(2, '0');
+            const minutos = String(fecha.getMinutes()).padStart(2, '0');
+            return `${horas}:${minutos}`;
+          };
+          
           const reservaFormateada = {
             id: reserva.id,
-            fecha: fechaInicio.toISOString().split('T')[0], // Formato YYYY-MM-DD
-            horaInicio: fechaInicio.toISOString().split('T')[1].substring(0, 5), // Extraer HH:MM de inicio
-            horaFin: fechaFin.toISOString().split('T')[1].substring(0, 5), // Extraer HH:MM de fin
+            fecha: formatoFecha(fechaInicio), // Usar hora local
+            horaInicio: formatoHora(fechaInicio), // Usar hora local
+            horaFin: formatoHora(fechaFin), // Usar hora local
             areaId: (reserva.area?.id || reserva.areaId)?.toString(), // Usar 'area' del backend
             areaNombre: reserva.area?.nombre || 'Área',
             usuarioNombre: reserva.usuario?.email || 'Usuario',
@@ -180,8 +193,8 @@ const CalendarioAreasComunes: React.FC<Props> = ({
             tipo: (reserva.usuario?.id === user?.id ? 'propia' : 'ocupado') as 'propia' | 'ocupado' | 'disponible'
           };
           
-          // Debug para cada reserva
-          console.log('🔍 Reserva formateada:', {
+          // 🕐 Debug para verificar corrección de zona horaria
+          console.log('🔍 Reserva formateada (con corrección de zona horaria):', {
             id: reservaFormateada.id,
             fecha: reservaFormateada.fecha,
             areaId: reservaFormateada.areaId,
@@ -192,6 +205,11 @@ const CalendarioAreasComunes: React.FC<Props> = ({
               area: reserva.area,
               inicio: reserva.inicio,
               fin: reserva.fin
+            },
+            zonHoraria: {
+              inicioUTC: new Date(reserva.inicio).toISOString(),
+              inicioLocal: new Date(reserva.inicio).toString(),
+              horaExtraida: reservaFormateada.horaInicio
             }
           });
           
@@ -200,6 +218,22 @@ const CalendarioAreasComunes: React.FC<Props> = ({
 
       setReservas(reservasFormateadas);
       console.log('✅ Reservas formateadas:', reservasFormateadas);
+      
+      // 🔍 DEBUG ESPECÍFICO PARA USER_CASUAL: Verificar visualización de reservas de otros usuarios
+      if (user?.role === 'USER_CASUAL') {
+        const reservasPropias = reservasFormateadas.filter(r => r.usuarioId === user?.id);
+        const reservasOtros = reservasFormateadas.filter(r => r.usuarioId !== user?.id);
+        console.log('👤 DEBUG USER_CASUAL - Visualización de reservas:');
+        console.log('  📝 Reservas propias:', reservasPropias.length, reservasPropias);
+        console.log('  👥 Reservas de otros usuarios:', reservasOtros.length, reservasOtros);
+        console.log('  📊 Total de reservas visibles:', reservasFormateadas.length);
+        
+        if (reservasOtros.length > 0) {
+          console.log('✅ USER_CASUAL puede ver reservas de otros usuarios en el calendario');
+        } else {
+          console.log('⚠️ USER_CASUAL NO está viendo reservas de otros usuarios');
+        }
+      }
       
       // Debug adicional: verificar fechas de hoy y mañana
       const hoy = new Date().toISOString().split('T')[0];

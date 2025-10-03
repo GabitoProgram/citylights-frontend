@@ -349,6 +349,45 @@ class ApiService {
     }
   }
 
+  // 🔍 MÉTODO ESPECÍFICO PARA USER_CASUAL: Obtener todas las reservas para visualización
+  async getAllReservasForVisualization() {
+    try {
+      console.log('👀 [API Service] Obteniendo TODAS las reservas para visualización (USER_CASUAL)...');
+      console.log('🌐 Flujo: Frontend → Gateway → Booking Microservicio');
+      
+      // Intentar diferentes enfoques para obtener todas las reservas
+      let response;
+      
+      // Enfoque 1: Intentar con parámetro de query
+      try {
+        console.log('🔄 Intento 1: Con parámetro ?all=true');
+        response = await this.api.get('/booking-copia/reserva?all=true');
+        console.log('✅ Enfoque 1 exitoso:', response.data?.length, 'reservas');
+      } catch (error) {
+        console.log('❌ Enfoque 1 falló, intentando enfoque 2...');
+        
+        // Enfoque 2: Intentar con endpoint de admin
+        try {
+          console.log('🔄 Intento 2: Con endpoint admin');
+          response = await this.api.get('/booking-copia/reserva/admin/all');
+          console.log('✅ Enfoque 2 exitoso:', response.data?.length, 'reservas');
+        } catch (error2) {
+          console.log('❌ Enfoque 2 falló, usando endpoint normal...');
+          
+          // Enfoque 3: Usar endpoint normal (fallback)
+          response = await this.api.get('/booking-copia/reserva');
+          console.log('⚠️ Usando endpoint normal (puede estar filtrado):', response.data?.length, 'reservas');
+        }
+      }
+      
+      console.log('👀 [API Service] Reservas para visualización USER_CASUAL:', response.data);
+      return response;
+    } catch (error) {
+      console.error('❌ [API Service] Error obteniendo reservas para visualización:', error);
+      throw error;
+    }
+  }
+
   async getDebugEstadosPagos() {
     try {
       console.log('🔍 [API Service] Obteniendo debug de estados de pagos...');
