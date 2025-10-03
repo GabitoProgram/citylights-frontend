@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useAreasComunes } from '../../hooks/useAreasComunes';
 import SimpleReservaModal from '../../components/SimpleReservaModal';
+import CalendarioAreasComunes from '../../components/CalendarioAreasComunes';
 import { apiService } from '../../services/api';
 import type { AreaComun, CreateReservaDto } from '../../types';
 
@@ -15,6 +16,7 @@ const AreasComunesUserPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [reservaModalOpen, setReservaModalOpen] = useState(false);
   const [areaToReserve, setAreaToReserve] = useState<AreaComun | null>(null);
+  const [vistaActual, setVistaActual] = useState<'calendario' | 'areas'>('calendario');
 
   // Datos de áreas (ahora viene del backend)
   const areasComunes = areas;
@@ -150,7 +152,7 @@ const AreasComunesUserPage = () => {
               <div className="flex items-center space-x-4">
                 <Bell className="h-6 w-6 text-gray-400 hover:text-gray-500 cursor-pointer ml-4" />
                 <div className="text-sm text-gray-700">
-                  <span className="font-medium">{user?.name || user?.username}</span>
+                  <span className="font-medium">{user?.nombre || user?.email}</span>
                 </div>
               </div>
             </div>
@@ -159,19 +161,59 @@ const AreasComunesUserPage = () => {
 
         {/* Page Content */}
         <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          {/* Search and Filter */}
-          <div className="mb-6 flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar áreas comunes..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+          {/* Tabs para cambiar vista */}
+          <div className="mb-6">
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  onClick={() => setVistaActual('calendario')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    vistaActual === 'calendario'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Calendar className="h-5 w-5 inline mr-2" />
+                  Calendario
+                </button>
+                <button
+                  onClick={() => setVistaActual('areas')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    vistaActual === 'areas'
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Building2 className="h-5 w-5 inline mr-2" />
+                  Lista de Áreas
+                </button>
+              </nav>
             </div>
           </div>
+
+          {/* Contenido según la vista actual */}
+          {vistaActual === 'calendario' ? (
+            <CalendarioAreasComunes 
+              onNuevaReserva={(fecha, hora, areaId) => {
+                console.log('Nueva reserva:', { fecha, hora, areaId });
+                // Aquí puedes manejar la nueva reserva si es necesario
+              }}
+            />
+          ) : (
+            <>
+              {/* Search and Filter - Solo en vista de áreas */}
+              <div className="mb-6 flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="h-5 w-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Buscar áreas comunes..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -268,6 +310,8 @@ const AreasComunesUserPage = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-2">No hay áreas disponibles</h3>
               <p className="text-gray-500">No se encontraron áreas comunes que coincidan con tu búsqueda.</p>
             </div>
+          )}
+            </>
           )}
         </div>
       </div>

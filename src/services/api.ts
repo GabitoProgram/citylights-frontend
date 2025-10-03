@@ -83,9 +83,26 @@ class ApiService {
   async getReservas() {
     console.log('🔄 [API Service] Obteniendo reservas...');
     console.log('🌐 Flujo: Frontend → Gateway → Microservicio');
+    
+    // Debug del token y usuario antes de la llamada
+    const token = localStorage.getItem('access_token');
+    const user = localStorage.getItem('user');
+    console.log('🔑 [API Service] Token presente:', !!token);
+    console.log('🔑 [API Service] Usuario almacenado:', user);
+    console.log('🔗 [API Service] URL de llamada:', '/booking-copia/reserva');
+    
     const response = await this.api.get('/booking-copia/reserva');
+    
     console.log('📊 [API Service] Respuesta completa:', response);
+    console.log('📊 [API Service] Status:', response.status);
     console.log('📊 [API Service] response.data:', response.data);
+    console.log('📊 [API Service] response.data.length:', response.data?.length);
+    
+    // Debug específico para arrays vacíos
+    if (Array.isArray(response.data) && response.data.length === 0) {
+      console.log('⚠️ [API Service] ARRAY VACÍO RECIBIDO - posible filtro por usuario o sin reservas');
+    }
+    
     return response;
   }
 
@@ -101,6 +118,11 @@ class ApiService {
 
   async generarFacturaParaSesion(sessionId) {
     const response = await this.api.post('/booking-copia/stripe/generate-invoice/' + sessionId);
+    return response.data;
+  }
+
+  async verifyStripeSession(sessionId) {
+    const response = await this.api.get('/booking-copia/stripe/verify-session/' + sessionId);
     return response.data;
   }
 

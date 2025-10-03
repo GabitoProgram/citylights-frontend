@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAreasComunes } from '../../hooks/useAreasComunes';
 import { SimpleAreaComunModal } from '../../components/SimpleAreaComunModal';
 import SimpleReservaModal from '../../components/SimpleReservaModal';
+import CalendarioAreasComunes from '../../components/CalendarioAreasComunes';
 
 import { apiService } from '../../services/api';
 import type { AreaComun, CreateAreaComunDto, UpdateAreaComunDto, CreateReservaDto } from '../../types';
@@ -16,6 +17,7 @@ const AreasComunesSuperPage = () => {
   const [selectedType, setSelectedType] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [vistaActual, setVistaActual] = useState<'calendario' | 'areas'>('calendario');
 
   // Hooks para manejar áreas y reservas
   const { areas, loading: areasLoading, createArea, updateArea, deleteArea, fetchAreas } = useAreasComunes();
@@ -368,6 +370,47 @@ const AreasComunesSuperPage = () => {
         </div>
       </div>
 
+      {/* Tabs para cambiar vista */}
+      <div className="mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setVistaActual('calendario')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                vistaActual === 'calendario'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Calendar className="h-5 w-5 inline mr-2" />
+              Calendario Global
+            </button>
+            <button
+              onClick={() => setVistaActual('areas')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                vistaActual === 'areas'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Building2 className="h-5 w-5 inline mr-2" />
+              Administración Total
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Contenido según la vista actual */}
+      {vistaActual === 'calendario' ? (
+        <CalendarioAreasComunes 
+          onNuevaReserva={(fecha, hora, areaId) => {
+            console.log('Nueva reserva desde super admin:', { fecha, hora, areaId });
+            // Aquí puedes manejar la nueva reserva si es necesario
+          }}
+        />
+      ) : (
+        <>
+
       {/* Búsqueda y filtros */}
       <div className="mb-6 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="flex flex-col sm:flex-row gap-4">
@@ -561,7 +604,9 @@ const AreasComunesSuperPage = () => {
             <span className="text-sm font-medium text-primary-800">Gestionar Reservas</span>
           </button>
         </div>
-          </div>
+      </div>
+            </>
+          )}
         </div>
       </div>
 

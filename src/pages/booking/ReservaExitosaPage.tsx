@@ -26,9 +26,11 @@ const ReservaExitosaPage = () => {
 
   const verifyPayment = async () => {
     try {
-      const response = await apiService.get(`/booking-copia/stripe/verify-session/${sessionId}`);
+      console.log('🔍 Verificando pago para session ID:', sessionId);
+      
+      // Usar el nuevo método del API service
+      const response = await apiService.verifyStripeSession(sessionId);
       console.log('🔍 Respuesta completa del servidor:', response);
-      console.log('🔍 Datos de verificación:', response);
       
       if (response?.session) {
         setSessionData(response.session);
@@ -53,8 +55,18 @@ const ReservaExitosaPage = () => {
         }
       }
     } catch (error: any) {
-      console.error('Error verificando pago:', error);
-      setError('Error al verificar el pago');
+      console.error('❌ Error verificando pago:', error);
+      
+      // Verificar si es un error de autenticación
+      if (error.response?.status === 401) {
+        setError('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
+        console.log('🔑 Error de autenticación - redirigiendo al login en 3 segundos...');
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
+        setError(`Error al verificar el pago: ${error.response?.data?.message || error.message}`);
+      }
     } finally {
       setLoading(false);
     }
