@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, User, DollarSign, Edit, Trash2, Plus, Download } from 'lucide-react';
+import { Calendar, Clock, User, DollarSign, Edit, Trash2, Plus, Download, Package } from 'lucide-react';
 import { apiService } from '../../services/api';
 import type { Reserva, AreaComun } from '../../types';
 import { rolePermissions } from '../../types';
@@ -16,6 +16,20 @@ const Reservas: React.FC<ReservasProps> = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingReserva, setEditingReserva] = useState<Reserva | null>(null);
   
+  // Estados para gestión de entrega
+  const [showEntregaModal, setShowEntregaModal] = useState(false);
+  const [reservaEntrega, setReservaEntrega] = useState<Reserva | null>(null);
+  const [entregaData, setEntregaData] = useState({
+    estadoEntrega: 'PENDIENTE' as 'PENDIENTE' | 'ENTREGADO' | 'NO_APLICA',
+    costoEntrega: '',
+    pagoEntrega: false,
+    observacionesEntrega: '',
+    // Campos para daños
+    montoDanos: '',
+    descripcionDanos: '',
+    hayDanos: false
+  });
+  
   const userPermissions = user ? rolePermissions[user.role] : { canRead: false, canCreate: false, canEdit: false, canDelete: false };
 
   const [formData, setFormData] = useState({
@@ -28,6 +42,34 @@ const Reservas: React.FC<ReservasProps> = () => {
 
   useEffect(() => {
     cargarDatos();
+  }, []);
+
+  // Manejar retorno desde Stripe para pagos de daños
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const payment = urlParams.get('payment');
+    const type = urlParams.get('type');
+    const id = urlParams.get('id');
+
+    if (payment && type === 'danos' && id) {
+      if (payment === 'success') {
+        console.log('✅ Pago de daños exitoso, esperando webhook y recargando datos...');
+        
+        // Dar tiempo al webhook de Stripe para procesar (3 segundos)
+        setTimeout(() => {
+          cargarDatos();
+        }, 3000);
+        
+        // Limpiar los parámetros de URL inmediatamente
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (payment === 'cancelled') {
+        console.log('❌ Pago de daños cancelado');
+        setError('El pago de daños fue cancelado. Puede intentarlo nuevamente desde la gestión de entregas.');
+        
+        // Limpiar los parámetros de URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
   }, []);
 
   const cargarDatos = async () => {
@@ -375,6 +417,90 @@ const Reservas: React.FC<ReservasProps> = () => {
     }
   };
 
+  // 📦 Función para color del estado de entrega
+  const getEstadoEntregaColor = (estadoEntrega: string) => {
+    switch (estadoEntrega) {
+      case 'ENTREGADO':
+        return 'bg-green-100 text-green-800';
+      case 'PENDIENTE':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'NO_APLICA':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  // 📦 Función para gestionar entrega
+  const handleGestionarEntrega = (reserva: Reserva) => {
+    setReservaEntrega(reserva);
+    setEntregaData({
+      estadoEntrega: (reserva as any).estadoEntrega || 'PENDIENTE',
+      costoEntrega: (reserva as any).costoEntrega?.toString() || '',
+      pagoEntrega: (reserva as any).pagoEntrega || false,
+      observacionesEntrega: (reserva as any).observacionesEntrega || '',
+      // Inicializar campos de daños
+      montoDanos: '',
+      descripcionDanos: '',
+      hayDanos: false
+    });
+    setShowEntregaModal(true);
+  };
+
+  const handleEntregaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!reservaEntrega) return;
+    
+    try {
+      const dataToSend = {
+        estadoEntrega: entregaData.estadoEntrega,
+        costoEntrega: entregaData.costoEntrega ? parseFloat(entregaData.costoEntrega) : undefined,
+        pagoEntrega: entregaData.pagoEntrega,
+        observacionesEntrega: entregaData.observacionesEntrega || undefined,
+        // Incluir datos de daños si existen
+        montoDanos: entregaData.hayDanos && entregaData.montoDanos ? parseFloat(entregaData.montoDanos) : undefined,
+        descripcionDanos: entregaData.hayDanos && entregaData.descripcionDanos ? entregaData.descripcionDanos : undefined
+      };
+      
+      console.log('📦 Enviando datos de entrega:', dataToSend);
+      
+      const resultado = await apiService.gestionarEntrega(reservaEntrega.id, dataToSend);
+      
+      // Si hay daños y se creó un pago por daños, redirigir a Stripe
+      if (entregaData.hayDanos && entregaData.montoDanos && parseFloat(entregaData.montoDanos) > 0 && resultado.pagoDanosId) {
+        console.log('💳 Se detectaron daños, redirigiendo a Stripe para pago...');
+        
+        try {
+          const stripeSession = await apiService.createStripeSessionForDanos(resultado.pagoDanosId);
+          
+          if (stripeSession?.url) {
+            console.log('✅ Sesión de Stripe creada, redirigiendo...');
+            // Redirigir a Stripe
+            window.location.href = stripeSession.url;
+            return; // No continuar con el resto del flujo
+          }
+        } catch (stripeError: any) {
+          console.error('❌ Error creando sesión de Stripe:', stripeError);
+          setError('Error al procesar el pago de daños. La entrega se guardó correctamente.');
+        }
+      }
+      
+      // Recargar datos solo si no se redirigió a Stripe
+      cargarDatos();
+      
+      // Cerrar modal
+      setShowEntregaModal(false);
+      setReservaEntrega(null);
+      
+      console.log('✅ Entrega gestionada exitosamente');
+      
+    } catch (err: any) {
+      console.error('❌ Error gestionando entrega:', err);
+      setError(err.response?.data?.message || 'Error al gestionar la entrega');
+    }
+  };
+
   const getAreaNombre = (areaId: number) => {
     const area = areas.find(a => a.id === areaId);
     return area?.nombre || 'Área no encontrada';
@@ -437,6 +563,9 @@ const Reservas: React.FC<ReservasProps> = () => {
                   Estado
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Estado Entrega
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
@@ -497,6 +626,42 @@ const Reservas: React.FC<ReservasProps> = () => {
                       {reserva.estado}
                     </span>
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col space-y-1">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getEstadoEntregaColor((reserva as any).estadoEntrega || 'PENDIENTE')}`}>
+                        {(reserva as any).estadoEntrega || 'PENDIENTE'}
+                      </span>
+                      {(reserva as any).observacionesEntrega && (
+                        <div className="text-xs text-gray-500 max-w-32 truncate" title={(reserva as any).observacionesEntrega}>
+                          {(reserva as any).observacionesEntrega}
+                        </div>
+                      )}
+                      {/* Mostrar estado de pagos de daños si existen */}
+                      {(reserva as any).pagosDanos && (reserva as any).pagosDanos.length > 0 && (
+                        <div className="text-xs">
+                          {(() => {
+                            const pagoPendiente = (reserva as any).pagosDanos.find((pago: any) => pago.estadoPago === 'PENDIENTE');
+                            const pagoPagado = (reserva as any).pagosDanos.find((pago: any) => pago.estadoPago === 'PAGADO');
+                            
+                            if (pagoPagado) {
+                              return (
+                                <span className="bg-green-100 text-green-800 px-1 py-0.5 rounded text-xs">
+                                  💰 Daños: ${pagoPagado.montoDanos} - PAGADO
+                                </span>
+                              );
+                            } else if (pagoPendiente) {
+                              return (
+                                <span className="bg-red-100 text-red-800 px-1 py-0.5 rounded text-xs">
+                                  💰 Daños: ${pagoPendiente.montoDanos} - PENDIENTE
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex gap-2">
                       {/* Botón de descargar PDF - todos pueden descargar PDFs */}
@@ -516,6 +681,17 @@ const Reservas: React.FC<ReservasProps> = () => {
                           title="Editar reserva"
                         >
                           <Edit size={16} />
+                        </button>
+                      )}
+                      
+                      {/* 📦 Botón de gestionar entrega - solo admins/super */}
+                      {(user?.role === 'SUPER_USER' || user?.role === 'USER_ADMIN') && (
+                        <button
+                          onClick={() => handleGestionarEntrega(reserva)}
+                          className="text-purple-600 hover:text-purple-800"
+                          title="Gestionar entrega"
+                        >
+                          <Package size={16} />
                         </button>
                       )}
                       
@@ -655,6 +831,159 @@ const Reservas: React.FC<ReservasProps> = () => {
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     {editingReserva ? 'Actualizar' : 'Crear Reserva'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para gestionar entrega */}
+      {showEntregaModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-md w-full m-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h2 className="text-xl font-bold mb-4">Gestionar Entrega</h2>
+              
+              <form onSubmit={handleEntregaSubmit} className="space-y-4">
+                {/* Estado de Entrega */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Estado de Entrega
+                  </label>
+                  <select
+                    value={entregaData.estadoEntrega}
+                    onChange={(e) => setEntregaData({...entregaData, estadoEntrega: e.target.value as any})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="ENTREGADO">Entregado</option>
+                    <option value="NO_APLICA">No Aplica</option>
+                  </select>
+                </div>
+
+                {/* Costo de Entrega */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Costo de Entrega (opcional)
+                  </label>
+                  <input
+                    type="number"
+                    value={entregaData.costoEntrega}
+                    onChange={(e) => setEntregaData({...entregaData, costoEntrega: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+
+                {/* Pago de Entrega */}
+                <div>
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={entregaData.pagoEntrega}
+                      onChange={(e) => setEntregaData({...entregaData, pagoEntrega: e.target.checked})}
+                      className="mr-2"
+                    />
+                    <span className="text-sm font-medium text-gray-700">Entrega pagada</span>
+                  </label>
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Observaciones
+                  </label>
+                  <textarea
+                    value={entregaData.observacionesEntrega}
+                    onChange={(e) => setEntregaData({...entregaData, observacionesEntrega: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="Observaciones sobre la entrega..."
+                  />
+                </div>
+
+                {/* Sección de Daños */}
+                <div className="border-t pt-4">
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Registro de Daños</h3>
+                  
+                  <div className="mb-3">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={entregaData.hayDanos}
+                        onChange={(e) => setEntregaData({...entregaData, hayDanos: e.target.checked})}
+                        className="mr-2"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Hay daños en el área</span>
+                    </label>
+                  </div>
+
+                  {entregaData.hayDanos && (
+                    <>
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Monto de Daños ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={entregaData.montoDanos}
+                          onChange={(e) => setEntregaData({...entregaData, montoDanos: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="0.00"
+                          min="0"
+                          step="0.01"
+                          required={entregaData.hayDanos}
+                        />
+                      </div>
+
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Descripción de Daños
+                        </label>
+                        <textarea
+                          value={entregaData.descripcionDanos}
+                          onChange={(e) => setEntregaData({...entregaData, descripcionDanos: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          rows={3}
+                          placeholder="Describe los daños encontrados..."
+                          required={entregaData.hayDanos}
+                        />
+                      </div>
+
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-3">
+                        <p className="text-sm text-yellow-800">
+                          💳 <strong>Proceso de pago:</strong> Al guardar, serás redirigido a Stripe para procesar el pago de los daños.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {error && (
+                  <div className="text-red-600 text-sm">{error}</div>
+                )}
+
+                <div className="flex gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEntregaModal(false);
+                      setReservaEntrega(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                  >
+                    Guardar Entrega
                   </button>
                 </div>
               </form>

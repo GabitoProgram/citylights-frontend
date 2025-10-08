@@ -116,6 +116,83 @@ class ApiService {
     return response.data;
   }
 
+  // 📦 MÉTODO ACTUALIZADO: Gestionar entrega de reserva con posibles daños
+  async gestionarEntrega(reservaId, entregaData) {
+    try {
+      console.log('📦 [API Service] Gestionando entrega para reserva:', reservaId, entregaData);
+      console.log('🌐 Flujo: Frontend → Gateway → Booking Microservicio');
+      const response = await this.api.patch(`/booking-copia/reserva/${reservaId}/entrega`, entregaData);
+      console.log('✅ [API Service] Entrega gestionada exitosamente:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error gestionando entrega:', error);
+      throw error;
+    }
+  }
+
+  // 💰 NUEVOS MÉTODOS: Gestión de pagos por daños
+  async createPagoDanos(pagoDanosData) {
+    try {
+      console.log('💰 [API Service] Creando pago por daños:', pagoDanosData);
+      console.log('🌐 Flujo: Frontend → Gateway → Booking Microservicio');
+      const response = await this.api.post('/booking-copia/pago-danos', pagoDanosData);
+      console.log('✅ [API Service] Pago por daños creado:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error creando pago por daños:', error);
+      throw error;
+    }
+  }
+
+  async getPagosDanosByReserva(reservaId) {
+    try {
+      console.log('💰 [API Service] Obteniendo pagos por daños para reserva:', reservaId);
+      const response = await this.api.get(`/booking-copia/pago-danos/reserva/${reservaId}`);
+      console.log('✅ [API Service] Pagos por daños obtenidos:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error obteniendo pagos por daños:', error);
+      throw error;
+    }
+  }
+
+  async marcarPagoDanosComoPagado(pagoDanosId, stripeData) {
+    try {
+      console.log('💰 [API Service] Marcando pago por daños como pagado:', pagoDanosId, stripeData);
+      const response = await this.api.patch(`/booking-copia/pago-danos/${pagoDanosId}/marcar-pagado`, stripeData);
+      console.log('✅ [API Service] Pago por daños marcado como pagado:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error marcando pago como pagado:', error);
+      throw error;
+    }
+  }
+
+  async getPagosDanosPendientes() {
+    try {
+      console.log('💰 [API Service] Obteniendo pagos por daños pendientes');
+      const response = await this.api.get('/booking-copia/pago-danos/pendientes/all');
+      console.log('✅ [API Service] Pagos pendientes obtenidos:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error obteniendo pagos pendientes:', error);
+      throw error;
+    }
+  }
+
+  // Crear sesión de Stripe para pago de daños
+  async createStripeSessionForDanos(pagoDanosId) {
+    try {
+      console.log('💳 [API Service] Creando sesión de Stripe para pago de daños:', pagoDanosId);
+      const response = await this.api.post(`/booking-copia/pago-danos/${pagoDanosId}/stripe-session`);
+      console.log('✅ [API Service] Sesión de Stripe creada:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error creando sesión de Stripe:', error);
+      throw error;
+    }
+  }
+
   async generarFacturaParaSesion(sessionId) {
     const response = await this.api.post('/booking-copia/stripe/generate-invoice/' + sessionId);
     return response.data;
