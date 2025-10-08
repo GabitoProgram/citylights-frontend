@@ -458,9 +458,13 @@ const Reservas: React.FC<ReservasProps> = () => {
         costoEntrega: entregaData.costoEntrega ? parseFloat(entregaData.costoEntrega) : undefined,
         pagoEntrega: entregaData.pagoEntrega,
         observacionesEntrega: entregaData.observacionesEntrega || undefined,
-        // Incluir datos de daños si existen
-        montoDanos: entregaData.hayDanos && entregaData.montoDanos ? parseFloat(entregaData.montoDanos) : undefined,
-        descripcionDanos: entregaData.hayDanos && entregaData.descripcionDanos ? entregaData.descripcionDanos : undefined
+        // Incluir datos de daños - Si NO hay daños, enviar 0 y "Sin daños"
+        montoDanos: entregaData.hayDanos 
+          ? (entregaData.montoDanos ? parseFloat(entregaData.montoDanos) : 0)
+          : 0, // Sin daños = monto 0
+        descripcionDanos: entregaData.hayDanos 
+          ? (entregaData.descripcionDanos || "Daños reportados")
+          : "Sin daños" // Sin daños = descripción específica
       };
       
       console.log('📦 Enviando datos de entrega:', dataToSend);

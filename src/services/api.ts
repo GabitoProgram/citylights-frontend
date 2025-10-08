@@ -193,6 +193,19 @@ class ApiService {
     }
   }
 
+  // Verificar pago de daños después de regresar de Stripe
+  async verifyDamagePayment(sessionId) {
+    try {
+      console.log('🔍 [API Service] Verificando pago de daños para sesión:', sessionId);
+      const response = await this.api.get(`/booking-copia/stripe/verify-damage-payment/${sessionId}`);
+      console.log('✅ [API Service] Pago de daños verificado:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ [API Service] Error verificando pago de daños:', error);
+      throw error;
+    }
+  }
+
   async generarFacturaParaSesion(sessionId) {
     const response = await this.api.post('/booking-copia/stripe/generate-invoice/' + sessionId);
     return response.data;

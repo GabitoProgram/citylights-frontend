@@ -17,6 +17,7 @@ import DashboardPageNew from './pages/shared/DashboardPageNew';
 // Pages - Booking
 import ReservaExitosaPage from './pages/booking/ReservaExitosaPage';
 import ReservasPage from './pages/booking/ReservasPage';
+import DamagePaymentSuccess from './pages/DamagePaymentSuccess';
 
 // Pages - Nomina
 import PagosPage from './pages/nomina/PagosPage';
@@ -143,6 +144,15 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ReservasPage />
+                </ProtectedRoute>
+              } 
+            />
+
+            <Route 
+              path="/damage-payment-success" 
+              element={
+                <ProtectedRoute>
+                  <DamagePaymentSuccess />
                 </ProtectedRoute>
               } 
             />

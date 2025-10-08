@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, MapPin, Users, Clock, Search, Filter, Edit, Trash2, ToggleRight, ToggleLeft, Calendar, Menu, X, LogOut, Bell, Home, Building2, CreditCard, Receipt, Settings, BarChart3, Shield } from 'lucide-react';
+import { Plus, MapPin, Users, Clock, Search, Filter, Edit, Trash2, ToggleRight, ToggleLeft, Calendar, Menu, X, LogOut, Bell, Home, Building2, CreditCard, Receipt, Settings, BarChart3, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useAreasComunes } from '../../hooks/useAreasComunes';
@@ -94,6 +94,28 @@ const AreasComunesAdminPage = () => {
     navigate('/login');
   };
 
+  const navigateTo = (path: string) => {
+    if (path === '/areas-comunes') {
+      // Si es areas-comunes, solo cerrar sidebar ya que estamos aquí
+      setSidebarOpen(false);
+    } else {
+      // Para otras rutas, navegar normalmente
+      navigate(path);
+      setSidebarOpen(false);
+    }
+  };
+
+  const menuItems = [
+    { id: 'dashboard', name: 'Dashboard', icon: Home, path: '/dashboard' },
+    { id: 'areas-comunes', name: 'Gestionar Áreas Comunes', icon: Building2, path: '/areas-comunes' },
+    { id: 'reservas', name: 'Todas las Reservas', icon: Calendar, path: '/reservas' },
+    { id: 'usuarios-casuales', name: 'Usuarios Casuales', icon: Users, path: '/usuarios' },
+    { id: 'pagos', name: 'Gestión de Pagos', icon: CreditCard, path: '/pagos' },
+    { id: 'facturas', name: 'Todas las Facturas', icon: Receipt, path: '/facturas' },
+    { id: 'reportes', name: 'Reportes', icon: BarChart3, path: '/reportes' },
+    { id: 'configuracion', name: 'Configuración', icon: Settings, path: '/configuracion' },
+  ];
+
   const handleCreateArea = () => {
     setEditingArea(null);
     setModalMode('create');
@@ -107,6 +129,12 @@ const AreasComunesAdminPage = () => {
   };
 
   const handleDeleteArea = async (areaId: number) => {
+    // Solo permitir eliminación para SUPER_USER
+    if (user?.role !== 'SUPER_USER') {
+      alert('Solo los Super Usuarios pueden eliminar áreas comunes.');
+      return;
+    }
+
     if (window.confirm('¿Estás seguro de que quieres eliminar esta área común?')) {
       try {
         await deleteArea(areaId);
@@ -201,135 +229,130 @@ const AreasComunesAdminPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
-      {/* Navigation Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-xl transform transition-transform duration-300 ease-in-out ${
+    <div className="flex h-screen bg-gray-50">
+      {/* Mobile sidebar backdrop */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)} />
+        </div>
+      )}
+
+      {/* Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-primary-800 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0`}>
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between h-16 px-6 bg-primary-600">
-            <div className="flex items-center space-x-3">
-              <Building2 className="h-8 w-8 text-white" />
-              <span className="text-xl font-bold text-white">CityLights</span>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden text-white hover:text-gray-200"
-            >
-              <X className="h-6 w-6" />
-            </button>
+      }`}>
+        <div className="flex items-center justify-between h-16 px-4 bg-primary-900">
+          <div className="flex items-center">
+            <Building2 className="h-8 w-8 text-white mr-2" />
+            <span className="text-white text-lg font-semibold">CityLights Admin</span>
           </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden text-white hover:text-gray-300"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
 
-          {/* User Info */}
-          <div className="p-6 border-b">
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 bg-primary-100 rounded-full flex items-center justify-center">
-                <span className="text-primary-600 font-semibold text-sm">
-                  {user?.email?.charAt(0).toUpperCase()}
-                </span>
+        {/* User info */}
+        <div className="p-4 border-b border-primary-700">
+          <div className="flex items-center">
+            <div className="h-10 w-10 bg-yellow-600 rounded-full flex items-center justify-center">
+              <User className="h-6 w-6 text-white" />
+            </div>
+            <div className="ml-3">
+              <div className="text-white text-sm font-medium">
+                {user?.firstName} {user?.lastName}
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">Admin</p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
+              <div className="text-yellow-300 text-xs">Administrador</div>
             </div>
           </div>
+        </div>
 
-          {/* Navigation Menu */}
-          <nav className="flex-1 px-4 py-6 space-y-2">
-            <button
-              onClick={() => setVistaActual('calendario')}
-              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                vistaActual === 'calendario'
-                  ? 'bg-primary-50 text-primary-600 border border-primary-200'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Calendar className="h-5 w-5" />
-              <span>Calendario</span>
-            </button>
+        {/* Navigation */}
+        <nav className="mt-4 px-4">
+          <ul className="space-y-2">
+            {menuItems.map((item) => (
+              <li key={item.id}>
+                <button
+                  onClick={() => navigateTo(item.path)}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    item.id === 'areas-comunes'
+                      ? 'bg-primary-700 text-white'
+                      : 'text-primary-100 hover:bg-primary-700 hover:text-white'
+                  }`}
+                >
+                  <item.icon className="mr-3 h-5 w-5" />
+                  {item.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-            <button
-              onClick={() => setVistaActual('areas')}
-              className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                vistaActual === 'areas'
-                  ? 'bg-primary-50 text-primary-600 border border-primary-200'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              <Building2 className="h-5 w-5" />
-              <span>Gestión de Áreas</span>
-            </button>
-
-            <button
-              onClick={() => navigate('/admin/dashboard')}
-              className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <BarChart3 className="h-5 w-5" />
-              <span>Dashboard</span>
-            </button>
-
-            <button
-              onClick={() => navigate('/admin/users')}
-              className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Shield className="h-5 w-5" />
-              <span>Usuarios</span>
-            </button>
-
-            <button
-              onClick={() => navigate('/admin/settings')}
-              className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Settings className="h-5 w-5" />
-              <span>Configuración</span>
-            </button>
-          </nav>
-
-          {/* Logout Button */}
-          <div className="p-4 border-t">
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <LogOut className="h-5 w-5" />
-              <span>Cerrar Sesión</span>
-            </button>
-          </div>
+        {/* Logout */}
+        <div className="absolute bottom-0 w-full p-4">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center px-3 py-2 text-sm font-medium text-primary-100 rounded-md hover:bg-primary-700 hover:text-white transition-colors"
+          >
+            <LogOut className="mr-3 h-5 w-5" />
+            Cerrar Sesión
+          </button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="lg:ml-64">
-        {/* Top Header */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="flex items-center justify-between h-16 px-6">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden text-gray-500 hover:text-gray-700"
-              >
-                <Menu className="h-6 w-6" />
-              </button>
-              <h1 className="text-xl font-semibold text-gray-900">
-                {vistaActual === 'calendario' ? 'Calendario de Reservas' : 'Gestión de Áreas Comunes'}
-              </h1>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              <Bell className="h-6 w-6 text-gray-400" />
-              <div className="h-8 w-8 bg-primary-100 rounded-full flex items-center justify-center">
-                <span className="text-primary-600 font-semibold text-sm">
-                  {user?.email?.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            </div>
+      {/* Main content */}
+      <div className="lg:pl-64">
+        {/* Top bar */}
+        <div className="flex items-center justify-between h-16 px-4 bg-white border-b border-gray-200">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden text-gray-500 hover:text-gray-700"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+          <h1 className="text-xl font-semibold text-gray-900">
+            {vistaActual === 'calendario' ? 'Calendario de Reservas' : 'Gestión de Áreas Comunes'}
+          </h1>
+          <div className="flex items-center space-x-4">
+            <Bell className="h-6 w-6 text-gray-400 hover:text-gray-500 cursor-pointer" />
           </div>
-        </header>
+        </div>
 
         {/* Page Content */}
-        <main className="p-6">
+        <div className="p-6">
+          {/* Tabs para cambiar vista */}
+          <div className="mb-6">
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-8">
+                <button
+                  onClick={() => setVistaActual('calendario')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    vistaActual === 'calendario'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Calendar className="h-5 w-5 inline mr-2" />
+                  Calendario
+                </button>
+                <button
+                  onClick={() => setVistaActual('areas')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    vistaActual === 'areas'
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <Building2 className="h-5 w-5 inline mr-2" />
+                  Gestión de Áreas
+                </button>
+              </nav>
+            </div>
+          </div>
+
+          {/* Contenido según la vista actual */}
           {vistaActual === 'calendario' ? (
             <CalendarioAreasComunes />
           ) : (
@@ -432,13 +455,16 @@ const AreasComunesAdminPage = () => {
                             <Edit className="h-4 w-4" />
                             <span className="text-sm">Editar</span>
                           </button>
-                          <button
-                            onClick={() => handleDeleteArea(area.id)}
-                            className="flex items-center space-x-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span className="text-sm">Eliminar</span>
-                          </button>
+                          {/* Solo mostrar botón de eliminar para SUPER_USER */}
+                          {user?.role === 'SUPER_USER' && (
+                            <button
+                              onClick={() => handleDeleteArea(area.id)}
+                              className="flex items-center space-x-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span className="text-sm">Eliminar</span>
+                            </button>
+                          )}
                         </div>
                         {area.activa && (
                           <button
@@ -478,7 +504,7 @@ const AreasComunesAdminPage = () => {
               )}
             </>
           )}
-        </main>
+        </div>
       </div>
 
       {/* Area Modal */}
