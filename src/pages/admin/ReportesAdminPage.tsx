@@ -23,13 +23,11 @@ import {
   CreditCard,
   Receipt,
   Settings,
-  Shield,
-  UserPlus,
-  Crown,
   LogOut,
   Menu,
   X,
   Bell,
+  User,
   AlertTriangle,
   CheckCircle,
   Clock
@@ -107,17 +105,15 @@ interface PagoBookingDaño {
   areaComun: string;
 }
 
-export default function ReportesPage() {
+export default function ReportesAdminPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Estados para los datos
+  // Estados para datos
+  const [loading, setLoading] = useState(false);
   const [ingresosAreas, setIngresosAreas] = useState<IngresoAreaComun[]>([]);
   const [egresosEmpleados, setEgresosEmpleados] = useState<EgresoEmpleado[]>([]);
-  const [cuotasResidentes, setCuotasResidentes] = useState<CuotaResidente[]>([]);
-  const [resumenMorosidad, setResumenMorosidad] = useState<ResumenMorosidad | null>(null);
-  const [pagosBookingDaños, setPagosBookingDaños] = useState<PagoBookingDaño[]>([]);
   const [resumenFinanciero, setResumenFinanciero] = useState<ResumenFinanciero>({
     totalIngresos: 0,
     totalEgresos: 0,
@@ -127,12 +123,16 @@ export default function ReportesPage() {
     areasActivas: 0
   });
   
-  // Estados para filtros
-  const [fechaInicio, setFechaInicio] = useState('');
-  const [fechaFin, setFechaFin] = useState('');
-  const [loading, setLoading] = useState(true);
+  // Estados para las nuevas secciones
+  const [cuotasResidentes, setCuotasResidentes] = useState<CuotaResidente[]>([]);
+  const [resumenMorosidad, setResumenMorosidad] = useState<ResumenMorosidad | null>(null);
+  const [pagosBookingDaños, setPagosBookingDaños] = useState<PagoBookingDaño[]>([]);
+  
+  // Estados para filtros y exportación
   const [exportandoPDF, setExportandoPDF] = useState(false);
   const [exportandoExcel, setExportandoExcel] = useState(false);
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
 
   const handleLogout = () => {
     logout();
@@ -145,44 +145,51 @@ export default function ReportesPage() {
   };
 
   const menuItems = [
-    { id: 'dashboard', name: 'Dashboard Principal', icon: Home, path: '/dashboard' },
+    { id: 'dashboard', name: 'Dashboard', icon: Home, path: '/dashboard' },
     { id: 'areas-comunes', name: 'Gestionar Áreas Comunes', icon: Building2, path: '/areas-comunes' },
-    { id: 'departamentos', name: 'Gestión de Departamentos', icon: Building, path: '/departamentos' },
     { id: 'reservas', name: 'Todas las Reservas', icon: Calendar, path: '/reservas' },
-    { id: 'usuarios', name: 'Gestión de Usuarios', icon: Users, path: '/usuarios' },
-    { id: 'crear-admin', name: 'Crear Administradores', icon: UserPlus, path: '/crear-admin' },
-    { id: 'roles', name: 'Gestión de Roles', icon: Shield, path: '/roles' },
-    { id: 'pagos', name: 'Sistema de Pagos', icon: CreditCard, path: '/pagos' },
+    { id: 'usuarios-casuales', name: 'Usuarios Casuales', icon: Users, path: '/usuarios' },
+    { id: 'pagos', name: 'Gestión de Pagos', icon: CreditCard, path: '/pagos' },
     { id: 'facturas', name: 'Todas las Facturas', icon: Receipt, path: '/facturas' },
-    { id: 'reportes', name: 'Reportes Avanzados', icon: BarChart3, path: '/reportes' },
-    { id: 'configuracion', name: 'Configuración Sistema', icon: Settings, path: '/configuracion' },
+    { id: 'reportes', name: 'Reportes', icon: BarChart3, path: '/reportes-admin' },
+    { id: 'configuracion', name: 'Configuración', icon: Settings, path: '/configuracion' },
   ];
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/login');
-    } else {
-      cargarDatos();
-    }
-  }, [user, navigate]);
-
+  // Función para cargar todos los datos
   const cargarDatos = async () => {
+    console.log('🚀 [REPORTES ADMIN] Iniciando carga completa de datos...');
     setLoading(true);
+    
     try {
-      console.log('🚀 [REPORTES] Iniciando carga completa de datos...');
-      
-      // Cargar datos de ingresos (áreas comunes) - YA FUNCIONA
-      console.log('1️⃣ [REPORTES] Cargando ingresos...');
-      await cargarIngresosAreas();
-      console.log('✅ [REPORTES] Ingresos cargados exitosamente');
-      
-      // Cargar datos de egresos (empleados) - YA FUNCIONA
-      console.log('2️⃣ [REPORTES] Cargando egresos...');
-      await cargarEgresosEmpleados();
-      console.log('✅ [REPORTES] Egresos cargados exitosamente');
-      
+      // Cargar ingresos y egresos existentes
+      console.log('1️⃣ [REPORTES ADMIN] Cargando ingresos y egresos...');
+      const [ingresosResponse, egresosResponse] = await Promise.all([
+        apiService.get('/api/proxy/booking-service/reportes/ingresos-areas'),
+        apiService.get('/api/proxy/nomina/reportes/egresos-empleados')
+      ]);
+
+      if (ingresosResponse.data && egresosResponse.data) {
+        setIngresosAreas(ingresosResponse.data);
+        setEgresosEmpleados(egresosResponse.data);
+
+        // Calcular resumen financiero
+        const totalIngresos = ingresosResponse.data.reduce((sum: number, area: IngresoAreaComun) => sum + area.totalIngresos, 0);
+        const totalEgresos = egresosResponse.data.reduce((sum: number, empleado: EgresoEmpleado) => sum + empleado.totalPagado, 0);
+        
+        setResumenFinanciero({
+          totalIngresos,
+          totalEgresos,
+          balance: totalIngresos - totalEgresos,
+          crecimientoIngresos: 0,
+          crecimientoEgresos: 0,
+          areasActivas: ingresosResponse.data.length
+        });
+
+        console.log('✅ [REPORTES ADMIN] Ingresos/Egresos cargados exitosamente');
+      }
+
       // Cargar datos de cuotas de residentes - DIRECTO COMO EN PAGOSPAGE
-      console.log('3️⃣ [REPORTES] Cargando cuotas de residentes...');
+      console.log('3️⃣ [REPORTES ADMIN] Cargando cuotas de residentes...');
       try {
         const token = localStorage.getItem('access_token');
         const responseCuotas = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residentes/historial', {
@@ -194,19 +201,19 @@ export default function ReportesPage() {
 
         if (responseCuotas.ok) {
           const cuotas = await responseCuotas.json();
-          console.log('✅ [REPORTES] Cuotas cargadas:', cuotas.length);
+          console.log('✅ [REPORTES ADMIN] Cuotas cargadas:', cuotas.length);
           setCuotasResidentes(cuotas);
         } else {
-          console.error('❌ [REPORTES] Error cargando cuotas:', responseCuotas.status);
+          console.error('❌ [REPORTES ADMIN] Error cargando cuotas:', responseCuotas.status);
           setCuotasResidentes([]);
         }
       } catch (errorCuotas) {
-        console.error('❌ [REPORTES] Error de conexión cuotas:', errorCuotas);
+        console.error('❌ [REPORTES ADMIN] Error de conexión cuotas:', errorCuotas);
         setCuotasResidentes([]);
       }
       
       // Cargar resumen de morosidad - DIRECTO COMO EN PAGOSPAGE
-      console.log('4️⃣ [REPORTES] Cargando resumen de morosidad...');
+      console.log('4️⃣ [REPORTES ADMIN] Cargando resumen de morosidad...');
       try {
         const token = localStorage.getItem('access_token');
         const responseMorosidad = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/morosidad/resumen', {
@@ -218,445 +225,92 @@ export default function ReportesPage() {
 
         if (responseMorosidad.ok) {
           const resumen = await responseMorosidad.json();
-          console.log('✅ [REPORTES] Resumen de morosidad cargado:', resumen);
+          console.log('✅ [REPORTES ADMIN] Resumen de morosidad cargado:', resumen);
           setResumenMorosidad(resumen);
         } else {
-          console.error('❌ [REPORTES] Error cargando morosidad:', responseMorosidad.status);
+          console.error('❌ [REPORTES ADMIN] Error cargando morosidad:', responseMorosidad.status);
           setResumenMorosidad(null);
         }
       } catch (errorMorosidad) {
-        console.error('❌ [REPORTES] Error de conexión morosidad:', errorMorosidad);
+        console.error('❌ [REPORTES ADMIN] Error de conexión morosidad:', errorMorosidad);
         setResumenMorosidad(null);
       }
-      
-      // Pagos de booking por daños - SIMULADO POR AHORA
-      console.log('5️⃣ [REPORTES] Cargando pagos por daños...');
-      // Por ahora array vacío hasta que tengamos el endpoint
+
+      // Cargar pagos por daños de booking (simulado por ahora)
+      console.log('5️⃣ [REPORTES ADMIN] Cargando pagos por daños de booking...');
       setPagosBookingDaños([]);
-      console.log('✅ [REPORTES] Pagos por daños inicializados (endpoint pendiente)');
-      
-      console.log('🎉 [REPORTES] Todos los datos cargados exitosamente');
+      console.log('✅ [REPORTES ADMIN] Pagos por daños cargados (vacío por ahora)');
       
     } catch (error) {
-      console.error('❌ [REPORTES] Error cargando datos de reportes:', error);
+      console.error('❌ [REPORTES ADMIN] Error general cargando datos:', error);
     } finally {
       setLoading(false);
+      console.log('🏁 [REPORTES ADMIN] Carga de datos completada');
     }
   };
 
-  const cargarIngresosAreas = async () => {
-    try {
-      console.log('📊 [REPORTES] Cargando ingresos por áreas...');
-      
-      // Obtener todas las reservas con sus pagos y áreas usando el API service
-      const reservas = await apiService.getReportesIngresos();
-      console.log('🔍 [REPORTES] Reservas obtenidas:', reservas.length);
-      
-      // Procesar datos para obtener ingresos REALES por área común
-      // Solo incluir reservas CONFIRMADAS con pagos ACEPTADOS
-      const ingresosPorArea = reservas
-        .filter((reserva: any) => {
-          const reservaConfirmada = reserva.estado === 'CONFIRMED';
-          const tienePagosAceptados = reserva.pagosReserva && 
-            reserva.pagosReserva.some((pago: any) => pago.estado === 'ACCEPTED');
-          
-          console.log(`📊 Reserva ${reserva.id}: confirmada=${reservaConfirmada}, pagos aceptados=${tienePagosAceptados}`);
-          return reservaConfirmada && tienePagosAceptados;
-        })
-        .reduce((acc: any, reserva: any) => {
-          const areaId = reserva.area?.id || reserva.areaId;
-          const areaNombre = reserva.area?.nombre || 'Área Desconocida';
-          
-          // Sumar solo los pagos que están ACCEPTED
-          const montosPagados = reserva.pagosReserva
-            .filter((pago: any) => pago.estado === 'ACCEPTED')
-            .reduce((sum: number, pago: any) => sum + pago.monto, 0);
-          
-          if (!acc[areaId]) {
-            acc[areaId] = {
-              id: areaId,
-              nombre: areaNombre,
-              totalIngresos: 0,
-              cantidadReservas: 0,
-              ingresoPromedio: 0
-            };
-          }
-          
-          acc[areaId].totalIngresos += montosPagados;
-          acc[areaId].cantidadReservas += 1;
-          
-          return acc;
-        }, {});
-      
-      // Calcular promedio y convertir a array
-      const ingresosArray = Object.values(ingresosPorArea).map((area: any) => ({
-        ...area,
-        ingresoPromedio: area.cantidadReservas > 0 ? area.totalIngresos / area.cantidadReservas : 0
-      }));
-      
-      console.log('💰 [REPORTES] Ingresos por área procesados:', ingresosArray);
-      setIngresosAreas(ingresosArray);
-      
-      // Actualizar resumen financiero con el total de ingresos
-      const totalIngresos = ingresosArray.reduce((sum: number, area: any) => sum + area.totalIngresos, 0);
-      setResumenFinanciero(prev => ({ 
-        ...prev, 
-        totalIngresos,
-        balance: totalIngresos - prev.totalEgresos
-      }));
-      
-      // También actualizar áreas activas
-      await cargarAreasActivas();
-      
-    } catch (error) {
-      console.error('❌ [REPORTES] Error cargando ingresos por áreas:', error);
-    }
-  };
+  // Cargar datos al montar el componente
+  useEffect(() => {
+    cargarDatos();
+  }, []);
 
-  const cargarEgresosEmpleados = async () => {
-    try {
-      console.log('📊 [REPORTES] Cargando egresos por empleados...');
-      
-      // Primero, obtener estadísticas de debug
-      try {
-        const debugInfo = await apiService.getDebugEstadosPagos();
-        console.log('🔍 [REPORTES] INFO DEBUG - Estados de pagos:', debugInfo);
-      } catch (debugError) {
-        console.log('⚠️ [REPORTES] No se pudo obtener debug info:', debugError);
-      }
-      
-      // Obtener todos los pagos de nómina usando el API service
-      const pagos = await apiService.getReportesEgresos();
-      console.log('🔍 [REPORTES] Pagos obtenidos:', pagos.length);
-      console.log('🔍 [REPORTES] Todos los pagos:', pagos);
-      
-      if (pagos.length > 0) {
-        console.log('🔍 [REPORTES] Primer pago completo:', JSON.stringify(pagos[0], null, 2));
-        console.log('🔍 [REPORTES] Estados disponibles:', pagos.map((p: any) => p.estado));
-      }
-      
-      // Procesar datos para obtener egresos REALES por empleado
-      // Ampliar los criterios de estado para incluir más opciones
-      const egresosPorEmpleado = pagos
-        .filter((pago: any) => {
-          // Solo incluir pagos realmente completados/confirmados
-          const estadosValidos = ['COMPLETADO', 'PAGADO', 'COMPLETADA', 'CONFIRMADO', 'PROCESADO', 'EXITOSO'];
-          const pagoCompletado = estadosValidos.includes(pago.estado?.toUpperCase()) || pago.pagado === true;
-          
-          // Comentar estos logs cuando ya no los necesites
-          // console.log(`💸 Pago ${pago.id}:`);
-          // console.log(`   - Estado: ${pago.estado}`);
-          // console.log(`   - Trabajador: ${pago.nomina?.trabajador?.nombre || 'No disponible'}`);
-          
-          return pagoCompletado;
-        })
-        .reduce((acc: any, pago: any) => {
-          const empleadoId = pago.nomina?.trabajador?.id || pago.trabajadorId;
-          const empleadoNombre = pago.nomina?.trabajador?.nombre || 'Empleado Desconocido';
-          const empleadoTipo = pago.nomina?.trabajador?.tipo || 'Empleado';
-          const monto = pago.monto || 0;
-          
-          console.log(`✅ Procesando pago válido: ${empleadoNombre} - $${monto}`);
-          
-          if (!acc[empleadoId]) {
-            acc[empleadoId] = {
-              id: empleadoId,
-              nombre: empleadoNombre,
-              tipo: empleadoTipo,
-              totalPagado: 0,
-              cantidadPagos: 0,
-              sueldoPromedio: 0
-            };
-          }
-          
-          acc[empleadoId].totalPagado += monto;
-          acc[empleadoId].cantidadPagos += 1;
-          
-          return acc;
-        }, {});
-      
-      // Calcular promedio y convertir a array
-      const egresosArray = Object.values(egresosPorEmpleado).map((empleado: any) => ({
-        ...empleado,
-        sueldoPromedio: empleado.cantidadPagos > 0 ? empleado.totalPagado / empleado.cantidadPagos : 0
-      }));
-      
-      console.log('💸 [REPORTES] Egresos por empleado procesados:', egresosArray);
-      console.log('💸 [REPORTES] Cantidad de empleados con pagos:', egresosArray.length);
-      setEgresosEmpleados(egresosArray);
-      
-      // Actualizar resumen financiero con el total de egresos
-      const totalEgresos = egresosArray.reduce((sum: number, empleado: any) => sum + empleado.totalPagado, 0);
-      console.log('💰 [REPORTES] Total egresos calculado:', totalEgresos);
-      
-      setResumenFinanciero(prev => ({ 
-        ...prev, 
-        totalEgresos,
-        balance: prev.totalIngresos - totalEgresos
-      }));
-      
-    } catch (error: any) {
-      console.error('❌ [REPORTES] Error cargando egresos por empleados:', error);
-      console.error('❌ [REPORTES] Detalles del error:', error.response?.data);
-    }
-  };
-
-  const cargarAreasActivas = async () => {
-    try {
-      console.log('📊 [REPORTES] Cargando áreas activas...');
-      
-      // Obtener todas las áreas comunes usando el API service
-      const areas = await apiService.getReportesAreasActivas();
-      console.log('🏢 [REPORTES] Áreas obtenidas:', areas.length);
-      
-      // Contar áreas que tienen al menos una reserva
-      const reservas = await apiService.getReportesIngresos();
-      const areasConReservas = new Set(reservas.map((reserva: any) => reserva.areaId || reserva.area?.id));
-      const areasActivasCount = areas.filter((area: any) => areasConReservas.has(area.id)).length;
-      
-      console.log('🏢 [REPORTES] Áreas activas:', areasActivasCount);
-      
-      // Actualizar resumen financiero con áreas activas
-      setResumenFinanciero(prev => ({ 
-        ...prev, 
-        areasActivas: areasActivasCount
-      }));
-      
-    } catch (error) {
-      console.error('❌ [REPORTES] Error cargando áreas activas:', error);
-    }
-  };
-
+  // Funciones de exportación
   const exportarPDF = async () => {
+    setExportandoPDF(true);
     try {
-      setExportandoPDF(true);
-      console.log('📄 [FRONTEND] Iniciando generación de PDF...');
-      
-      // Obtener datos del backend
-      const token = localStorage.getItem('access_token');
-      const params = new URLSearchParams();
-      
-      if (fechaInicio) params.append('fechaInicio', fechaInicio);
-      if (fechaFin) params.append('fechaFin', fechaFin);
-      
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al obtener datos del reporte');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || 'Error en la respuesta del servidor');
-      }
-
-      const datos = result.data;
-      console.log('📄 [FRONTEND] Datos obtenidos:', datos);
-
-      // Generar PDF con jsPDF
       const doc = new jsPDF();
+      doc.text('Reporte Financiero CityLights - Admin', 20, 20);
       
-      // Configurar fuente y título
-      doc.setFontSize(20);
-      doc.setTextColor(75, 0, 130); // Púrpura
-      doc.text('REPORTE FINANCIERO CITYLIGHTS', 20, 25);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text(`Período: ${datos.resumen.periodo}`, 20, 35);
-      doc.text(`Generado: ${datos.resumen.fechaGeneracion}`, 20, 42);
-
       // Resumen financiero
-      doc.setFontSize(16);
-      doc.setTextColor(75, 0, 130);
-      doc.text('RESUMEN FINANCIERO', 20, 58);
-      
-      const resumenData = [
-        ['Total Ingresos', `$${datos.resumen.totalIngresos.toLocaleString()}`],
-        ['Total Egresos', `$${datos.resumen.totalEgresos.toLocaleString()}`],
-        ['Balance', `$${datos.resumen.balance.toLocaleString()}`]
-      ];
+      doc.text('Resumen Financiero:', 20, 40);
+      doc.text(`Total Ingresos: $${resumenFinanciero.totalIngresos.toFixed(2)}`, 20, 50);
+      doc.text(`Total Egresos: $${resumenFinanciero.totalEgresos.toFixed(2)}`, 20, 60);
+      doc.text(`Balance: $${resumenFinanciero.balance.toFixed(2)}`, 20, 70);
 
+      // Tabla de ingresos
       autoTable(doc, {
-        startY: 65,
-        head: [['Concepto', 'Monto']],
-        body: resumenData,
-        theme: 'grid',
-        headStyles: { fillColor: [147, 51, 234] }, // Púrpura
-        margin: { left: 20, right: 20 }
+        head: [['Área Común', 'Total Ingresos', 'Cantidad Reservas', 'Ingreso Promedio']],
+        body: ingresosAreas.map(area => [
+          area.nombre,
+          `$${area.totalIngresos.toFixed(2)}`,
+          area.cantidadReservas.toString(),
+          `$${area.ingresoPromedio.toFixed(2)}`
+        ]),
+        startY: 85
       });
 
-      // Tabla de ingresos (solo si hay datos)
-      if (datos.ingresos.length > 0) {
-        let currentY = (doc as any).lastAutoTable.finalY + 15;
-        doc.setFontSize(14);
-        doc.setTextColor(75, 0, 130);
-        doc.text('INGRESOS POR ÁREA', 20, currentY);
-
-        const ingresosData = datos.ingresos.map((ing: any) => [
-          ing.nombre,
-          ing.cantidadReservas.toString(),
-          `$${ing.totalIngresos.toLocaleString()}`
-        ]);
-
-        autoTable(doc, {
-          startY: currentY + 5,
-          head: [['Área Común', 'Reservas', 'Total Ingresos']],
-          body: ingresosData,
-          theme: 'striped',
-          headStyles: { fillColor: [34, 197, 94] }, // Verde
-          margin: { left: 20, right: 20 }
-        });
-      }
-
-      // Tabla de egresos
-      if (datos.egresos.length > 0) {
-        let currentY = datos.ingresos.length > 0 ? (doc as any).lastAutoTable.finalY + 15 : 100;
-        doc.setFontSize(14);
-        doc.setTextColor(75, 0, 130);
-        doc.text('EGRESOS POR EMPLEADO', 20, currentY);
-
-        const egresosData = datos.egresos.map((egr: any) => [
-          egr.nomina?.trabajador?.nombre || 'N/A',
-          egr.nomina?.trabajador?.tipo || 'N/A',
-          new Date(egr.fechaPago).toLocaleDateString('es-ES'),
-          `$${egr.monto.toLocaleString()}`
-        ]);
-
-        autoTable(doc, {
-          startY: currentY + 5,
-          head: [['Empleado', 'Tipo', 'Fecha Pago', 'Monto']],
-          body: egresosData,
-          theme: 'striped',
-          headStyles: { fillColor: [239, 68, 68] }, // Rojo
-          margin: { left: 20, right: 20 }
-        });
-      }
-
-      // Descargar PDF
-      const filename = `reporte-financiero-${new Date().toISOString().split('T')[0]}.pdf`;
-      doc.save(filename);
-      
-      console.log('✅ [FRONTEND] PDF generado y descargado exitosamente');
-      
+      doc.save('reporte-financiero-admin.pdf');
     } catch (error) {
-      console.error('❌ [FRONTEND] Error exportando a PDF:', error);
-      alert('Error al generar el reporte PDF. Inténtalo de nuevo.');
+      console.error('Error generando PDF:', error);
     } finally {
       setExportandoPDF(false);
     }
   };
 
   const exportarExcel = async () => {
+    setExportandoExcel(true);
     try {
-      setExportandoExcel(true);
-      console.log('📊 [FRONTEND] Iniciando generación de Excel...');
+      const wb = XLSX.utils.book_new();
       
-      // Obtener datos del backend
-      const token = localStorage.getItem('access_token');
-      const params = new URLSearchParams();
+      // Hoja de ingresos
+      const wsIngresos = XLSX.utils.json_to_sheet(ingresosAreas);
+      XLSX.utils.book_append_sheet(wb, wsIngresos, 'Ingresos');
       
-      if (fechaInicio) params.append('fechaInicio', fechaInicio);
-      if (fechaFin) params.append('fechaFin', fechaFin);
-      
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al obtener datos del reporte');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || 'Error en la respuesta del servidor');
-      }
-
-      const datos = result.data;
-      console.log('📊 [FRONTEND] Datos obtenidos:', datos);
-
-      // Crear workbook de Excel
-      const workbook = XLSX.utils.book_new();
-
-      // Hoja de resumen
-      const resumenData = [
-        ['REPORTE FINANCIERO CITYLIGHTS'],
-        [`Período: ${datos.resumen.periodo}`],
-        [`Generado: ${datos.resumen.fechaGeneracion}`],
-        [],
-        ['RESUMEN FINANCIERO'],
-        ['Concepto', 'Monto'],
-        ['Total Ingresos', datos.resumen.totalIngresos],
-        ['Total Egresos', datos.resumen.totalEgresos],
-        ['Balance', datos.resumen.balance]
-      ];
-
-      const resumenSheet = XLSX.utils.aoa_to_sheet(resumenData);
-      XLSX.utils.book_append_sheet(workbook, resumenSheet, 'Resumen');
-
-      // Hoja de ingresos (solo si hay datos)
-      if (datos.ingresos.length > 0) {
-        const ingresosData = [
-          ['Área Común', 'Cantidad Reservas', 'Total Ingresos', 'Ingreso Promedio'],
-          ...datos.ingresos.map((ing: any) => [
-            ing.nombre,
-            ing.cantidadReservas,
-            ing.totalIngresos,
-            ing.ingresoPromedio
-          ])
-        ];
-
-        const ingresosSheet = XLSX.utils.aoa_to_sheet(ingresosData);
-        XLSX.utils.book_append_sheet(workbook, ingresosSheet, 'Ingresos');
-      }
-
       // Hoja de egresos
-      if (datos.egresos.length > 0) {
-        const egresosData = [
-          ['Empleado', 'Tipo', 'Fecha Pago', 'Monto', 'Nómina ID'],
-          ...datos.egresos.map((egr: any) => [
-            egr.nomina?.trabajador?.nombre || 'N/A',
-            egr.nomina?.trabajador?.tipo || 'N/A',
-            new Date(egr.fechaPago).toLocaleDateString('es-ES'),
-            egr.monto,
-            egr.nomina?.id || 'N/A'
-          ])
-        ];
-
-        const egresosSheet = XLSX.utils.aoa_to_sheet(egresosData);
-        XLSX.utils.book_append_sheet(workbook, egresosSheet, 'Egresos');
-      }
-
-      // Descargar Excel
-      const filename = `reporte-financiero-${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(workbook, filename);
+      const wsEgresos = XLSX.utils.json_to_sheet(egresosEmpleados);
+      XLSX.utils.book_append_sheet(wb, wsEgresos, 'Egresos');
       
-      console.log('✅ [FRONTEND] Excel generado y descargado exitosamente');
+      // Hoja de cuotas
+      const wsCuotas = XLSX.utils.json_to_sheet(cuotasResidentes);
+      XLSX.utils.book_append_sheet(wb, wsCuotas, 'Cuotas Residentes');
       
+      XLSX.writeFile(wb, 'reporte-financiero-admin.xlsx');
     } catch (error) {
-      console.error('❌ [FRONTEND] Error exportando a Excel:', error);
-      alert('Error al generar el reporte Excel. Inténtalo de nuevo.');
+      console.error('Error generando Excel:', error);
     } finally {
       setExportandoExcel(false);
     }
   };
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -667,14 +321,14 @@ export default function ReportesPage() {
         </div>
       )}
 
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gradient-to-b from-purple-900 to-purple-800 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+      {/* Sidebar - PANEL MORADO IGUAL AL DASHBOARD */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-primary-800 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-        <div className="flex items-center justify-between h-16 px-4 bg-purple-950">
+        <div className="flex items-center justify-between h-16 px-4 bg-primary-900">
           <div className="flex items-center">
-            <Crown className="h-8 w-8 text-yellow-400 mr-2" />
-            <span className="text-white text-lg font-semibold">CityLights Master</span>
+            <Building2 className="h-8 w-8 text-white mr-2" />
+            <span className="text-white text-lg font-semibold">CityLights Admin</span>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -685,16 +339,16 @@ export default function ReportesPage() {
         </div>
 
         {/* User info */}
-        <div className="p-4 border-b border-purple-700">
+        <div className="p-4 border-b border-primary-700">
           <div className="flex items-center">
-            <div className="h-10 w-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
-              <Crown className="h-6 w-6 text-white" />
+            <div className="h-10 w-10 bg-yellow-600 rounded-full flex items-center justify-center">
+              <User className="h-6 w-6 text-white" />
             </div>
             <div className="ml-3">
               <div className="text-white text-sm font-medium">
                 {user?.firstName} {user?.lastName}
               </div>
-              <div className="text-yellow-300 text-xs">Super Usuario</div>
+              <div className="text-yellow-300 text-xs">Administrador</div>
             </div>
           </div>
         </div>
@@ -707,9 +361,9 @@ export default function ReportesPage() {
                 <button
                   onClick={() => navigateTo(item.path)}
                   className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                    item.id === 'reportes'
-                      ? 'bg-purple-700 text-white'
-                      : 'text-purple-100 hover:bg-purple-700 hover:text-white'
+                    location.pathname === item.path
+                      ? 'bg-primary-700 text-white'
+                      : 'text-primary-100 hover:bg-primary-700 hover:text-white'
                   }`}
                 >
                   <item.icon className="mr-3 h-5 w-5" />
@@ -724,7 +378,7 @@ export default function ReportesPage() {
         <div className="absolute bottom-0 w-full p-4">
           <button
             onClick={handleLogout}
-            className="w-full flex items-center px-3 py-2 text-sm font-medium text-purple-100 rounded-md hover:bg-purple-700 hover:text-white transition-colors"
+            className="w-full flex items-center px-3 py-2 text-sm font-medium text-primary-100 rounded-md hover:bg-primary-700 hover:text-white transition-colors"
           >
             <LogOut className="mr-3 h-5 w-5" />
             Cerrar Sesión
@@ -744,7 +398,7 @@ export default function ReportesPage() {
           </button>
           <h1 className="text-xl font-semibold text-gray-900 flex items-center">
             <BarChart3 className="mr-3 h-6 w-6 text-purple-600" />
-            Reportes Financieros
+            Reportes Financieros - Admin
           </h1>
           <div className="flex items-center space-x-4">
             {/* Botones de exportación */}
@@ -803,7 +457,6 @@ export default function ReportesPage() {
               {loading ? 'Cargando...' : 'Actualizar'}
             </button>
             <Bell className="h-6 w-6 text-gray-400 hover:text-gray-500 cursor-pointer" />
-            <Crown className="h-6 w-6 text-yellow-500" />
           </div>
         </div>
 
@@ -821,7 +474,7 @@ export default function ReportesPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-3xl font-bold text-gray-900 mb-2">Resumen Financiero</h2>
-                    <p className="text-gray-600">Vista general de ingresos, egresos y balance</p>
+                    <p className="text-gray-600">Vista general de ingresos, egresos y balance - Panel Admin</p>
                   </div>
                   <div className="bg-gradient-to-r from-purple-500 to-blue-500 p-4 rounded-xl">
                     <DollarSign className="h-8 w-8 text-white" />
@@ -947,58 +600,68 @@ export default function ReportesPage() {
                 </div>
               </div>
 
-              {/* Sección de Egresos */}
-              <div className="bg-white rounded-lg shadow">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <TrendingDown className="mr-2 h-6 w-6 text-red-600" />
+              {/* Sección de Egresos Mejorada */}
+              <div className="bg-white rounded-xl shadow-lg border border-gray-200 mb-8">
+                <div className="px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-red-50 to-rose-50">
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                    <div className="bg-red-500 p-2 rounded-lg mr-3">
+                      <TrendingDown className="h-6 w-6 text-white" />
+                    </div>
                     Egresos por Empleado
+                    <span className="ml-3 bg-red-100 text-red-800 text-sm font-medium px-3 py-1 rounded-full">
+                      {egresosEmpleados.length} empleados
+                    </span>
                   </h2>
+                  <p className="text-gray-600 mt-2">Nómina y pagos a personal</p>
                 </div>
                 <div className="p-6">
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Empleado
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Tipo
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Total Pagado
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Cantidad Pagos
                           </th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Promedio por Pago
                           </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {egresosEmpleados.map((empleado) => (
-                          <tr key={empleado.id} className="hover:bg-gray-50">
+                          <tr key={empleado.id} className="hover:bg-gray-50 transition-colors duration-150">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center">
-                                <Users className="h-5 w-5 text-gray-400 mr-2" />
+                                <div className="bg-red-100 p-2 rounded-lg mr-3">
+                                  <Users className="h-5 w-5 text-red-600" />
+                                </div>
                                 <div className="text-sm font-medium text-gray-900">{empleado.nombre}</div>
                               </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="inline-flex px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
+                              <span className="bg-purple-100 text-purple-800 text-sm font-medium px-3 py-1 rounded-full">
                                 {empleado.tipo}
                               </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-red-600 font-semibold">${empleado.totalPagado.toFixed(2)}</div>
+                              <div className="text-lg font-bold text-red-600">${empleado.totalPagado.toFixed(2)}</div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">{empleado.cantidadPagos}</div>
+                              <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full">
+                                {empleado.cantidadPagos} pagos
+                              </span>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">${empleado.sueldoPromedio.toFixed(2)}</div>
+                              <div className="text-sm font-medium text-gray-900">${empleado.sueldoPromedio.toFixed(2)}</div>
                             </td>
                           </tr>
                         ))}

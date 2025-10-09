@@ -48,7 +48,7 @@ export default function AdminUserDashboard() {
     { id: 'usuarios-casuales', name: 'Usuarios Casuales', icon: Users, path: '/usuarios' },
     { id: 'pagos', name: 'Gestión de Pagos', icon: CreditCard, path: '/pagos' },
     { id: 'facturas', name: 'Todas las Facturas', icon: Receipt, path: '/facturas' },
-    { id: 'reportes', name: 'Reportes', icon: BarChart3, path: '/reportes' },
+    { id: 'reportes', name: 'Reportes', icon: BarChart3, path: '/reportes-admin' },
     { id: 'configuracion', name: 'Configuración', icon: Settings, path: '/configuracion' },
   ];
 

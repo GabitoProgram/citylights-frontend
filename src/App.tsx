@@ -23,6 +23,12 @@ import DamagePaymentSuccess from './pages/DamagePaymentSuccess';
 import PagosPage from './pages/nomina/PagosPage';
 import ReportesPage from './pages/nomina/ReportesPage';
 
+// Pages - Admin
+import ReportesAdminPage from './pages/admin/ReportesAdminPage';
+
+// Pages - Resident
+import MisPagosPage from './pages/resident/MisPagosPage';
+
 // Components
 import AreasComunes from './components/AreasComunes/AreasComunes';
 import Departamentos from './components/Departamentos/Departamentos';
@@ -167,10 +173,28 @@ function App() {
             />
 
             <Route 
+              path="/mis-pagos" 
+              element={
+                <ProtectedRoute roles={['USER_CASUAL']}>
+                  <MisPagosPage />
+                </ProtectedRoute>
+              } 
+            />
+
+            <Route 
               path="/reportes" 
               element={
-                <ProtectedRoute roles={['SUPER_USER', 'USER_ADMIN']}>
+                <ProtectedRoute roles={['SUPER_USER']}>
                   <ReportesPage />
+                </ProtectedRoute>
+              } 
+            />
+
+            <Route 
+              path="/reportes-admin" 
+              element={
+                <ProtectedRoute roles={['USER_ADMIN']}>
+                  <ReportesAdminPage />
                 </ProtectedRoute>
               } 
             />

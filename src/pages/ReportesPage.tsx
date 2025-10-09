@@ -29,7 +29,10 @@ import {
   LogOut,
   Menu,
   X,
-  Bell
+  Bell,
+  AlertTriangle,
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 
 interface IngresoAreaComun {
@@ -58,6 +61,41 @@ interface ResumenFinanciero {
   areasActivas?: number;
 }
 
+interface CuotaResidente {
+  id: number;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  montoBase: number;
+  montoMorosidad: number;
+  montoTotal: number;
+  estado: 'PENDIENTE' | 'PAGADO' | 'VENCIDO' | 'MOROSO';
+  fechaVencimiento: string;
+  fechaCreacion: string;
+  fechaPago?: string;
+  porcentajeMorosidad: number;
+}
+
+interface ResumenMorosidad {
+  totalCuotasMorosas: number;
+  montoTotalAPagar: number;
+  cuotasMorosas: CuotaResidente[];
+}
+
+interface PagoBookingDaño {
+  id: number;
+  reservaId: number;
+  usuarioId: string;
+  nombreUsuario: string;
+  emailUsuario: string;
+  descripcionDaño: string;
+  montoDaño: number;
+  fechaDaño: string;
+  estado: 'PENDIENTE' | 'PAGADO';
+  fechaPago?: string;
+  areaComun: string;
+}
+
 export default function ReportesPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -66,6 +104,9 @@ export default function ReportesPage() {
   // Estados para los datos
   const [ingresosAreas, setIngresosAreas] = useState<IngresoAreaComun[]>([]);
   const [egresosEmpleados, setEgresosEmpleados] = useState<EgresoEmpleado[]>([]);
+  const [cuotasResidentes, setCuotasResidentes] = useState<CuotaResidente[]>([]);
+  const [resumenMorosidad, setResumenMorosidad] = useState<ResumenMorosidad | null>(null);
+  const [pagosBookingDaños, setPagosBookingDaños] = useState<PagoBookingDaño[]>([]);
   const [resumenFinanciero, setResumenFinanciero] = useState<ResumenFinanciero>({
     totalIngresos: 0,
     totalEgresos: 0,
@@ -107,6 +148,7 @@ export default function ReportesPage() {
   ];
 
   useEffect(() => {
+    console.log('🔥🔥🔥 REPORTES PAGE UPDATED! 🔥🔥🔥');
     if (!user) {
       navigate('/login');
     } else {
@@ -117,14 +159,76 @@ export default function ReportesPage() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      // Cargar datos de ingresos (áreas comunes)
-      await cargarIngresosAreas();
+      console.log('🚀 [REPORTES] Iniciando carga completa de datos...');
       
-      // Cargar datos de egresos (empleados)
+      // Cargar datos de ingresos (áreas comunes) - YA FUNCIONA
+      console.log('1️⃣ [REPORTES] Cargando ingresos...');
+      await cargarIngresosAreas();
+      console.log('✅ [REPORTES] Ingresos cargados exitosamente');
+      
+      // Cargar datos de egresos (empleados) - YA FUNCIONA
+      console.log('2️⃣ [REPORTES] Cargando egresos...');
       await cargarEgresosEmpleados();
+      console.log('✅ [REPORTES] Egresos cargados exitosamente');
+      
+      // Cargar datos de cuotas de residentes - DIRECTO COMO EN PAGOSPAGE
+      console.log('3️⃣ [REPORTES] Cargando cuotas de residentes...');
+      try {
+        const token = localStorage.getItem('access_token');
+        const responseCuotas = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/cuotas', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (responseCuotas.ok) {
+          const cuotas = await responseCuotas.json();
+          console.log('✅ [REPORTES] Cuotas cargadas:', cuotas.length);
+          setCuotasResidentes(cuotas);
+        } else {
+          console.error('❌ [REPORTES] Error cargando cuotas:', responseCuotas.status);
+          setCuotasResidentes([]);
+        }
+      } catch (errorCuotas) {
+        console.error('❌ [REPORTES] Error de conexión cuotas:', errorCuotas);
+        setCuotasResidentes([]);
+      }
+      
+      // Cargar resumen de morosidad - DIRECTO COMO EN PAGOSPAGE
+      console.log('4️⃣ [REPORTES] Cargando resumen de morosidad...');
+      try {
+        const token = localStorage.getItem('access_token');
+        const responseMorosidad = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/morosidad', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (responseMorosidad.ok) {
+          const resumen = await responseMorosidad.json();
+          console.log('✅ [REPORTES] Resumen de morosidad cargado:', resumen);
+          setResumenMorosidad(resumen);
+        } else {
+          console.error('❌ [REPORTES] Error cargando morosidad:', responseMorosidad.status);
+          setResumenMorosidad(null);
+        }
+      } catch (errorMorosidad) {
+        console.error('❌ [REPORTES] Error de conexión morosidad:', errorMorosidad);
+        setResumenMorosidad(null);
+      }
+      
+      // Pagos de booking por daños - SIMULADO POR AHORA
+      console.log('5️⃣ [REPORTES] Cargando pagos por daños...');
+      // Por ahora array vacío hasta que tengamos el endpoint
+      setPagosBookingDaños([]);
+      console.log('✅ [REPORTES] Pagos por daños inicializados (endpoint pendiente)');
+      
+      console.log('🎉 [REPORTES] Todos los datos cargados exitosamente');
       
     } catch (error) {
-      console.error('Error cargando datos de reportes:', error);
+      console.error('❌ [REPORTES] Error cargando datos de reportes:', error);
     } finally {
       setLoading(false);
     }
@@ -864,6 +968,219 @@ export default function ReportesPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Cuotas de Residentes */}
+              <div className="bg-white rounded-lg shadow">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Home className="h-5 w-5 text-indigo-600 mr-2" />
+                      <h3 className="text-lg font-medium text-gray-900">Cuotas de Residentes</h3>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Total: {cuotasResidentes.length} cuotas
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Residente
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Estado
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Monto Base
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Morosidad
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Total
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Fecha Vencimiento
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {cuotasResidentes.map((cuota) => (
+                          <tr key={cuota.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <Users className="h-5 w-5 text-gray-400 mr-2" />
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">{cuota.userName}</div>
+                                  <div className="text-sm text-gray-500">{cuota.userEmail}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                cuota.estado === 'PAGADO' 
+                                  ? 'bg-green-100 text-green-800'
+                                  : cuota.estado === 'MOROSO'
+                                  ? 'bg-red-100 text-red-800'
+                                  : cuota.estado === 'VENCIDO'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {cuota.estado}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">${cuota.montoBase.toFixed(2)}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-red-600">${cuota.montoMorosidad.toFixed(2)}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-semibold text-gray-900">${cuota.montoTotal.toFixed(2)}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {new Date(cuota.fechaVencimiento).toLocaleDateString()}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen de Morosidad */}
+              {resumenMorosidad && resumenMorosidad.totalCuotasMorosas > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg shadow">
+                  <div className="px-6 py-4 border-b border-red-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+                        <h3 className="text-lg font-medium text-red-900">Alerta de Morosidad</h3>
+                      </div>
+                      <div className="text-sm text-red-600 font-semibold">
+                        {resumenMorosidad.totalCuotasMorosas} cuotas morosas
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="bg-white p-4 rounded-lg border border-red-200">
+                        <div className="flex items-center">
+                          <AlertTriangle className="h-8 w-8 text-red-500 mr-3" />
+                          <div>
+                            <p className="text-sm font-medium text-red-900">Total a Recuperar</p>
+                            <p className="text-2xl font-bold text-red-600">
+                              ${resumenMorosidad.montoTotalAPagar.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border border-red-200">
+                        <div className="flex items-center">
+                          <Clock className="h-8 w-8 text-orange-500 mr-3" />
+                          <div>
+                            <p className="text-sm font-medium text-red-900">Cuotas Morosas</p>
+                            <p className="text-2xl font-bold text-red-600">
+                              {resumenMorosidad.totalCuotasMorosas}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pagos de Booking por Daños */}
+              {pagosBookingDaños.length > 0 && (
+                <div className="bg-white rounded-lg shadow">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Building2 className="h-5 w-5 text-orange-600 mr-2" />
+                        <h3 className="text-lg font-medium text-gray-900">Pagos por Daños en Reservas</h3>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Total: {pagosBookingDaños.length} pagos
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Usuario
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Área Común
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Descripción Daño
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Monto
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Estado
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Fecha
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {pagosBookingDaños.map((pago) => (
+                            <tr key={pago.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center">
+                                  <Users className="h-5 w-5 text-gray-400 mr-2" />
+                                  <div>
+                                    <div className="text-sm font-medium text-gray-900">{pago.nombreUsuario}</div>
+                                    <div className="text-sm text-gray-500">{pago.emailUsuario}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">{pago.areaComun}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="text-sm text-gray-900 max-w-xs truncate" title={pago.descripcionDaño}>
+                                  {pago.descripcionDaño}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold text-red-600">${pago.montoDaño.toFixed(2)}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                  pago.estado === 'PAGADO' 
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  {pago.estado}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">
+                                  {new Date(pago.fechaDaño).toLocaleDateString()}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
