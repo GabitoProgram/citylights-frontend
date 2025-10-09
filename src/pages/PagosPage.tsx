@@ -414,7 +414,9 @@ const PagosPage: React.FC = () => {
       });
 
       if (response.ok) {
+        const resultado = await response.json();
         console.log('Pago confirmado exitosamente');
+        
         // Limpiar los parámetros de la URL
         const url = new URL(window.location.href);
         url.searchParams.delete('success');
@@ -424,7 +426,58 @@ const PagosPage: React.FC = () => {
         
         // Recargar los datos para mostrar el estado actualizado
         cargarDatos();
-        alert('¡Pago completado exitosamente!');
+        
+        // 🆕 MOSTRAR MENSAJE CON OPCIÓN DE DESCARGAR FACTURA
+        if (resultado.factura) {
+          const descargarFactura = window.confirm(
+            `¡Pago completado exitosamente!\n\n` +
+            `✅ Factura generada: ${resultado.factura.numeroFactura}\n` +
+            `💰 Total: $${resultado.factura.total}\n\n` +
+            `¿Deseas descargar la factura ahora?`
+          );
+          
+          if (descargarFactura) {
+            try {
+              // Llamar al servicio de booking para generar la factura PDF
+              const facturaResponse = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/booking/factura/generar`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  numeroFactura: resultado.factura.numeroFactura,
+                  trabajadorNombre: resultado.factura.trabajadorNombre,
+                  total: resultado.factura.total,
+                  fechaCreacion: resultado.factura.fechaCreacion,
+                  tipo: 'PAGO_NOMINA'
+                })
+              });
+
+              if (facturaResponse.ok) {
+                const blob = await facturaResponse.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = `factura_${resultado.factura.numeroFactura}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                console.log('Factura descargada exitosamente');
+              } else {
+                console.error('Error generando PDF de factura');
+                alert('Pago completado pero hubo un error al generar el PDF de la factura. Puedes descargarla desde la sección de Facturas.');
+              }
+            } catch (facturaError) {
+              console.error('Error descargando factura:', facturaError);
+              alert('Pago completado pero hubo un error al descargar la factura. Puedes descargarla desde la sección de Facturas.');
+            }
+          }
+        } else {
+          alert('¡Pago completado exitosamente!');
+        }
       } else {
         const error = await response.json();
         console.error('Error confirmando pago:', error);

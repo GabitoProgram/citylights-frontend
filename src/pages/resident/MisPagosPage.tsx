@@ -18,6 +18,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { jsPDF } from 'jspdf';
 
 interface CuotaResidente {
   id: number;
@@ -193,14 +194,29 @@ const MisPagosPage: React.FC = () => {
         const resultado = await response.json();
         console.log('✅ Pago confirmado:', resultado);
         
-        // Mostrar mensaje de éxito
-        alert('✅ ¡Pago realizado exitosamente! Tu cuota ha sido marcada como pagada.');
-        
         // Recargar las cuotas para mostrar el estado actualizado
         await cargarCuotasUsuario();
         
         // Limpiar los parámetros de la URL
         window.history.replaceState({}, document.title, '/mis-pagos');
+        
+        // 🆕 MOSTRAR MENSAJE CON OPCIÓN DE DESCARGAR FACTURA
+        if (resultado.factura || resultado.cuota) {
+          const descargarFactura = window.confirm(
+            `✅ ¡Pago realizado exitosamente!\n\n` +
+            `📋 Cuota: ${resultado.cuota ? `${resultado.cuota.mes}/${resultado.cuota.anio}` : 'N/A'}\n` +
+            `💰 Total pagado: $${resultado.cuota?.montoTotal || 'N/A'}\n\n` +
+            `¿Deseas descargar tu factura ahora?`
+          );
+          
+          if (descargarFactura && resultado.cuota) {
+            // Usar la función local para generar el PDF
+            descargarFacturaCuota(resultado.cuota);
+          }
+        } else {
+          // Mensaje normal si no se generó factura
+          alert('✅ ¡Pago realizado exitosamente! Tu cuota ha sido marcada como pagada.');
+        }
       } else {
         const error = await response.json();
         console.error('❌ Error confirmando pago:', error);
@@ -209,6 +225,114 @@ const MisPagosPage: React.FC = () => {
     } catch (error) {
       console.error('❌ Error de conexión confirmando pago:', error);
       alert('Error de conexión al confirmar el pago. El pago puede haberse procesado correctamente.');
+    }
+  };
+
+  // 🆕 FUNCIÓN PARA GENERAR Y DESCARGAR FACTURA PDF DESDE EL FRONTEND
+  const descargarFacturaCuota = async (cuota: CuotaResidente) => {
+    try {
+      console.log('🔄 Generando PDF desde el frontend para cuota:', cuota.id);
+      
+      // Crear nuevo documento PDF
+      const doc = new jsPDF();
+      
+      // ENCABEZADO DE LA EMPRESA
+      doc.setFontSize(20);
+      doc.setTextColor(37, 99, 235); // azul
+      doc.text('CITYLIGHTS', 20, 25);
+      doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
+      doc.text('FACTURA DE CUOTA MENSUAL', 20, 35);
+      
+      // INFORMACIÓN DE LA FACTURA
+      const numeroFactura = `CUOTA-${cuota.id.toString().padStart(8, '0')}`;
+      doc.setFontSize(12);
+      doc.text(`Número de Factura: ${numeroFactura}`, 20, 50);
+      doc.text(`Fecha de Emisión: ${new Date().toLocaleDateString('es-ES')}`, 20, 60);
+      doc.text(`Período: ${cuota.mes}/${cuota.anio}`, 20, 70);
+      
+      // LÍNEA SEPARADORA
+      doc.setLineWidth(0.5);
+      doc.line(20, 80, 190, 80);
+      
+      // DATOS DEL CLIENTE
+      doc.setFontSize(14);
+      doc.setTextColor(31, 41, 55); // gris oscuro
+      doc.text('DATOS DEL RESIDENTE', 20, 95);
+      
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      const nombreCompleto = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Residente';
+      doc.text(`Nombre: ${nombreCompleto}`, 20, 110);
+      doc.text(`Email: ${user?.email || 'N/A'}`, 20, 120);
+      doc.text(`Concepto: Cuota mensual ${cuota.mes}/${cuota.anio}`, 20, 130);
+      
+      // DETALLES DE LA FACTURA
+      doc.setFontSize(14);
+      doc.setTextColor(31, 41, 55);
+      doc.text('DETALLE DE LA FACTURA', 20, 150);
+      
+      // Encabezados de tabla
+      doc.setFontSize(10);
+      doc.setTextColor(107, 114, 128); // gris
+      doc.text('DESCRIPCIÓN', 20, 165);
+      doc.text('CANT.', 120, 165);
+      doc.text('PRECIO', 140, 165);
+      doc.text('TOTAL', 170, 165);
+      
+      // Línea bajo encabezados
+      doc.line(20, 170, 190, 170);
+      
+      // Datos de la cuota
+      let yPosition = 180;
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      
+      // Cuota base
+      doc.text(`Cuota mensual ${cuota.mes}/${cuota.anio}`, 20, yPosition);
+      doc.text('1', 120, yPosition);
+      doc.text(`$${cuota.monto.toFixed(2)}`, 140, yPosition);
+      doc.text(`$${cuota.monto.toFixed(2)}`, 170, yPosition);
+      yPosition += 10;
+      
+      // Morosidad si aplica
+      if (cuota.montoMorosidad > 0) {
+        doc.text(`Recargo por morosidad (${cuota.diasMorosidad} días)`, 20, yPosition);
+        doc.text('1', 120, yPosition);
+        doc.text(`$${cuota.montoMorosidad.toFixed(2)}`, 140, yPosition);
+        doc.text(`$${cuota.montoMorosidad.toFixed(2)}`, 170, yPosition);
+        yPosition += 10;
+      }
+      
+      // Línea antes del total
+      yPosition += 5;
+      doc.line(120, yPosition, 190, yPosition);
+      
+      // TOTAL
+      yPosition += 15;
+      doc.setFontSize(14);
+      doc.setTextColor(31, 41, 55);
+      doc.text('TOTAL A PAGAR:', 120, yPosition);
+      doc.setFontSize(16);
+      doc.setTextColor(220, 38, 38); // rojo
+      doc.text(`$${cuota.montoTotal.toFixed(2)}`, 170, yPosition);
+      
+      // PIE DE PÁGINA
+      doc.setFontSize(8);
+      doc.setTextColor(107, 114, 128);
+      doc.text('CitiLights - Sistema de Gestión de Cuotas Residenciales', 20, 250);
+      doc.text(`Factura generada el ${new Date().toLocaleString('es-ES')}`, 20, 260);
+      doc.text('Esta es una factura digital generada automáticamente.', 20, 270);
+      
+      // Descargar el PDF
+      const fileName = `factura_cuota_${numeroFactura}.pdf`;
+      doc.save(fileName);
+      
+      console.log('✅ PDF generado y descargado exitosamente');
+      
+    } catch (error) {
+      console.error('❌ Error generando PDF:', error);
+      alert('Error al generar la factura. Intenta nuevamente.');
     }
   };
 
@@ -507,6 +631,17 @@ const MisPagosPage: React.FC = () => {
                         >
                           <CreditCard className="h-4 w-4 mr-2" />
                           Pagar
+                        </button>
+                      )}
+                      
+                      {cuota.estado === 'PAGADO' && (
+                        <button
+                          onClick={() => descargarFacturaCuota(cuota)}
+                          className="bg-green-500 text-white px-4 py-2 rounded text-sm hover:bg-green-600 flex items-center"
+                          title="Descargar factura de la cuota"
+                        >
+                          <Receipt className="h-4 w-4 mr-2" />
+                          Factura PDF
                         </button>
                       )}
                     </div>
