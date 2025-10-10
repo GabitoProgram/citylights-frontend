@@ -674,7 +674,8 @@ const CalendarioAreasComunes: React.FC<Props> = ({
         horaInicio: inicio,
         horaFin: fin,
         numeroPersonas: 1, // Por defecto, se puede hacer configurable
-        observaciones: `Reserva desde calendario - ${areaActual?.nombre}`
+        observaciones: `Reserva desde calendario - ${areaActual?.nombre}`,
+        usuarioEmail: user?.email // 📧 AÑADIR EMAIL PARA NOTIFICACIONES
       };
 
       console.log('🔄 Creando reserva con validaciones anti-duplicado:', nuevaReservaData);
