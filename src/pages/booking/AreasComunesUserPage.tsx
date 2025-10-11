@@ -104,20 +104,27 @@ const AreasComunesUserPage = () => {
     }
 
     try {
-      console.log('📤 Enviando reserva:', reservaData);
-      await apiService.createReserva(reservaData);
-      alert('✅ Reserva creada exitosamente');
+      console.log('� Creando reserva con Stripe y facturación:', reservaData);
+      
+      // Crear reserva con integración de Stripe para pago y facturación automática
+      const response = await apiService.createReservaWithStripe(reservaData);
+      console.log('✅ Reserva con Stripe creada exitosamente:', response);
+      
+      if (response.stripe?.checkoutUrl) {
+        // Redirigir a Stripe Checkout para el pago
+        console.log('🚀 Redirigiendo a Stripe Checkout:', response.stripe.checkoutUrl);
+        window.location.href = response.stripe.checkoutUrl;
+      } else {
+        throw new Error('No se pudo obtener la URL de pago de Stripe');
+      }
+      
+      // Cerrar modal (se ejecutará cuando el usuario regrese de Stripe)
       setReservaModalOpen(false);
       setAreaToReserve(null);
       
-      // Recargar reservas
-      const response = await apiService.getAllReservasForVisualization();
-      if (response.data && Array.isArray(response.data)) {
-        setReservas(response.data);
-      }
     } catch (error) {
-      console.error('❌ Error al crear reserva:', error);
-      alert('Error al crear la reserva');
+      console.error('❌ Error al crear reserva con Stripe:', error);
+      alert('Error al procesar la reserva y el pago');
     }
   };
 
@@ -234,36 +241,53 @@ const AreasComunesUserPage = () => {
                 Áreas Comunes
               </h1>
             </div>
-            
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setVistaActual(vistaActual === 'calendario' ? 'areas' : 'calendario')}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center"
-              >
-                {vistaActual === 'calendario' ? (
-                  <>
-                    <Building2 className="h-4 w-4 mr-2" />
-                    Ver Lista
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Ver Calendario
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </header>
+
+        {/* Pestañas de Navegación */}
+        <div className="bg-white border-b border-gray-200">
+          <nav className="flex space-x-8 px-6" aria-label="Tabs">
+            <button
+              onClick={() => setVistaActual('areas')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                vistaActual === 'areas'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Ver Áreas Comunes
+            </button>
+            <button
+              onClick={() => setVistaActual('calendario')}
+              className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                vistaActual === 'calendario'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Hacer Reservas
+            </button>
+          </nav>
+        </div>
 
         {/* Contenido */}
         <main className="flex-1 overflow-auto p-6">
           {vistaActual === 'calendario' ? (
             <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">Hacer Reserva de Área Común</h2>
+                <p className="text-gray-600">Selecciona una fecha y hora en el calendario para hacer tu reserva</p>
+              </div>
               <CalendarioAreasComunes />
             </div>
           ) : (
             <div className="space-y-6">
+              {/* Título de la sección */}
+              <div className="bg-white rounded-xl shadow-sm p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-2">Explorar Áreas Comunes</h2>
+                <p className="text-gray-600">Conoce nuestras áreas comunes disponibles y haz tu reserva</p>
+              </div>
+
               {/* Barra de búsqueda */}
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <div className="relative">
