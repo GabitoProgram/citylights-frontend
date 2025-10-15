@@ -103,7 +103,7 @@ const PagosPage: React.FC = () => {
   const [cuotasResidentes, setCuotasResidentes] = useState<CuotaResidente[]>([]);
   const [resumenMorosidad, setResumenMorosidad] = useState<ResumenMorosidad | null>(null);
   const [resumenResidentes, setResumenResidentes] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'trabajadores' | 'nominas' | 'pagos' | 'facturas' | 'cuotas' | 'morosidad' | 'residentes'>('trabajadores');
+  const [activeTab, setActiveTab] = useState<'trabajadores' | 'nominas' | 'pagos' | 'facturas' | 'cuotas' | 'morosidad' | 'residentes' | 'editarCuota'>('trabajadores');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Estados para modales
@@ -131,6 +131,94 @@ const PagosPage: React.FC = () => {
     nominaId: 0,
     monto: 0
   });
+
+  // Estados para editar cuota mensual
+  const [conceptosCuota, setConceptosCuota] = useState({
+    jardinFrente: 0,
+    jardinGeneral: 0,
+    recojoBasura: 0,
+    limpieza: 0,
+    luzGradas: 0,
+    cera: 0,
+    ace: 0,
+    lavanderia: 0,
+    ahorroAdministracion: 0,
+    agua: 0
+  });
+
+  const [montoTotal, setMontoTotal] = useState(0);
+
+  // Calcular monto total automáticamente
+  useEffect(() => {
+    const total = Object.values(conceptosCuota).reduce((sum, value) => sum + value, 0);
+    setMontoTotal(total);
+  }, [conceptosCuota]);
+
+  // Funciones para manejar configuración de cuotas
+  const cargarConfiguracionCuota = async () => {
+    try {
+      console.log('📋 Cargando configuración de cuota...');
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al cargar configuración');
+      }
+      
+      const data = await response.json();
+      console.log('✅ Configuración cargada:', data);
+      
+      if (data.success && data.data) {
+        setConceptosCuota(data.data.conceptos);
+      }
+    } catch (error) {
+      console.error('❌ Error al cargar configuración de cuota:', error);
+      // Mantener valores por defecto si hay error
+    }
+  };
+
+  const actualizarConfiguracionCuota = async () => {
+    try {
+      console.log('🔄 Guardando configuración de cuota...');
+      console.log('📝 Conceptos a guardar:', conceptosCuota);
+      
+      const token = localStorage.getItem('access_token');
+      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(conceptosCuota)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al actualizar configuración');
+      }
+      
+      const data = await response.json();
+      console.log('✅ Configuración actualizada:', data);
+      
+      if (data.success) {
+        alert(`✅ Configuración actualizada exitosamente!\n${data.message}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al actualizar configuración:', error);
+      alert('❌ Error al actualizar la configuración de cuota mensual');
+    }
+  };
+
+  // Cargar configuración cuando se abra el tab editarCuota
+  useEffect(() => {
+    if (activeTab === 'editarCuota') {
+      cargarConfiguracionCuota();
+    }
+  }, [activeTab]);
 
   // Funciones de navegación y sidebar
   const handleLogout = () => {
@@ -1171,6 +1259,14 @@ const PagosPage: React.FC = () => {
                 🏠 Cuotas Residentes
               </button>
               <button
+                onClick={() => setActiveTab('editarCuota')}
+                className={`px-6 py-3 font-medium ${activeTab === 'editarCuota' 
+                  ? 'border-b-2 border-green-500 text-green-600' 
+                  : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                💰 Editar Cuota Mensual
+              </button>
+              <button
                 onClick={() => setActiveTab('morosidad')}
                 className={`px-6 py-3 font-medium ${activeTab === 'morosidad' 
                   ? 'border-b-2 border-red-500 text-red-600' 
@@ -1848,6 +1944,225 @@ const PagosPage: React.FC = () => {
                         <p className="text-sm">Verifica la conexión con el microservicio de login</p>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab Editar Cuota Mensual */}
+            {activeTab === 'editarCuota' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold text-gray-900">💰 Editar Cuota Mensual</h2>
+                  <div className="bg-green-50 px-4 py-2 rounded-lg">
+                    <span className="text-green-700 font-semibold">
+                      Total: ${montoTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Conceptos de la Cuota Mensual</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Jardín Frente del Bloque */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Jardín Frente del Bloque
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.jardinFrente}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          jardinFrente: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Jardín General */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Jardín General
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.jardinGeneral}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          jardinGeneral: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Recojo de Basura */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Recojo de Basura
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.recojoBasura}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          recojoBasura: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Limpieza */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Limpieza
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.limpieza}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          limpieza: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Luz Gradas */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Luz Gradas
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.luzGradas}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          luzGradas: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Cera */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Cera
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.cera}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          cera: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Ace */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ace
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.ace}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          ace: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Lavandería */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Lavandería
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.lavanderia}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          lavanderia: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Ahorro Administración */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Ahorro Administración
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.ahorroAdministracion}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          ahorroAdministracion: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+
+                    {/* Agua */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Agua
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={conceptosCuota.agua}
+                        onChange={(e) => setConceptosCuota({
+                          ...conceptosCuota,
+                          agua: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Resumen y Botón de Guardar */}
+                  <div className="mt-8 pt-6 border-t border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <div className="text-lg">
+                        <span className="text-gray-600">Monto Total de la Cuota:</span>
+                        <span className="ml-2 text-2xl font-bold text-green-600">
+                          ${montoTotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={actualizarConfiguracionCuota}
+                        className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors flex items-center"
+                      >
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Actualizar Cuota Mensual
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

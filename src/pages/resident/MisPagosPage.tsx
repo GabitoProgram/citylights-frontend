@@ -233,8 +233,140 @@ const MisPagosPage: React.FC = () => {
     try {
       console.log('🔄 Generando PDF desde el frontend para cuota:', cuota.id);
       
-      // Crear nuevo documento PDF
-      const doc = new jsPDF();
+      // 🆕 OBTENER CONFIGURACIÓN DE CONCEPTOS DE CUOTA
+      let conceptosDetalle: Array<{descripcion: string, cantidad: number, precio: number, total: number}> = [];
+      
+      try {
+        const token = localStorage.getItem('access_token');
+        const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ Configuración de conceptos obtenida:', data);
+          
+          if (data.success && data.data && data.data.conceptos) {
+            const conceptos = data.data.conceptos;
+            
+            // Solo agregar conceptos que tengan valor mayor a 0
+            if (conceptos.jardinFrente > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Jardín Frente',
+                cantidad: 1,
+                precio: conceptos.jardinFrente,
+                total: conceptos.jardinFrente
+              });
+            }
+            
+            if (conceptos.jardinGeneral > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Jardín General',
+                cantidad: 1,
+                precio: conceptos.jardinGeneral,
+                total: conceptos.jardinGeneral
+              });
+            }
+            
+            if (conceptos.recojoBasura > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Recojo de Basura',
+                cantidad: 1,
+                precio: conceptos.recojoBasura,
+                total: conceptos.recojoBasura
+              });
+            }
+            
+            if (conceptos.limpieza > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Limpieza',
+                cantidad: 1,
+                precio: conceptos.limpieza,
+                total: conceptos.limpieza
+              });
+            }
+            
+            if (conceptos.luzGradas > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Luz Gradas',
+                cantidad: 1,
+                precio: conceptos.luzGradas,
+                total: conceptos.luzGradas
+              });
+            }
+            
+            if (conceptos.cera > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Cera',
+                cantidad: 1,
+                precio: conceptos.cera,
+                total: conceptos.cera
+              });
+            }
+            
+            if (conceptos.ace > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Ace',
+                cantidad: 1,
+                precio: conceptos.ace,
+                total: conceptos.ace
+              });
+            }
+            
+            if (conceptos.lavanderia > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Lavandería',
+                cantidad: 1,
+                precio: conceptos.lavanderia,
+                total: conceptos.lavanderia
+              });
+            }
+            
+            if (conceptos.ahorroAdministracion > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Ahorro Administración',
+                cantidad: 1,
+                precio: conceptos.ahorroAdministracion,
+                total: conceptos.ahorroAdministracion
+              });
+            }
+            
+            if (conceptos.agua > 0) {
+              conceptosDetalle.push({
+                descripcion: 'Agua',
+                cantidad: 1,
+                precio: conceptos.agua,
+                total: conceptos.agua
+              });
+            }
+            
+            console.log(`✅ Desglose de conceptos preparado: ${conceptosDetalle.length} items`);
+          }
+        }
+      } catch (configError) {
+        console.warn('⚠️ No se pudo obtener configuración de conceptos:', configError);
+        // Continuar con el formato original si hay error
+      }
+      
+      // Si no hay conceptos específicos, usar el formato original
+      if (conceptosDetalle.length === 0) {
+        conceptosDetalle = [{
+          descripcion: `Cuota mensual ${cuota.mes}/${cuota.anio}`,
+          cantidad: 1,
+          precio: cuota.monto,
+          total: cuota.monto
+        }];
+      }
+      
+      // Crear nuevo documento PDF con formato más largo para evitar desbordamiento
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [210, 350] // Ancho: 210mm (A4), Alto: 350mm (más largo que A4 estándar de 297mm)
+      });
       
       // ENCABEZADO DE LA EMPRESA
       doc.setFontSize(20);
@@ -283,17 +415,19 @@ const MisPagosPage: React.FC = () => {
       // Línea bajo encabezados
       doc.line(20, 170, 190, 170);
       
-      // Datos de la cuota
+      // 🆕 MOSTRAR DESGLOSE DE CONCEPTOS
       let yPosition = 180;
       doc.setFontSize(10);
       doc.setTextColor(0, 0, 0);
       
-      // Cuota base
-      doc.text(`Cuota mensual ${cuota.mes}/${cuota.anio}`, 20, yPosition);
-      doc.text('1', 120, yPosition);
-      doc.text(`$${cuota.monto.toFixed(2)}`, 140, yPosition);
-      doc.text(`$${cuota.monto.toFixed(2)}`, 170, yPosition);
-      yPosition += 10;
+      // Iterar sobre cada concepto
+      conceptosDetalle.forEach((concepto) => {
+        doc.text(concepto.descripcion, 20, yPosition);
+        doc.text(concepto.cantidad.toString(), 120, yPosition);
+        doc.text(`$${concepto.precio.toFixed(2)}`, 140, yPosition);
+        doc.text(`$${concepto.total.toFixed(2)}`, 170, yPosition);
+        yPosition += 10;
+      });
       
       // Morosidad si aplica
       if (cuota.montoMorosidad > 0) {
@@ -317,12 +451,19 @@ const MisPagosPage: React.FC = () => {
       doc.setTextColor(220, 38, 38); // rojo
       doc.text(`$${cuota.montoTotal.toFixed(2)}`, 170, yPosition);
       
-      // PIE DE PÁGINA
+      // Agregar más espacio antes del pie de página
+      yPosition += 30;
+      
+      // PIE DE PÁGINA (posicionado dinámicamente)
       doc.setFontSize(8);
       doc.setTextColor(107, 114, 128);
-      doc.text('CitiLights - Sistema de Gestión de Cuotas Residenciales', 20, 250);
-      doc.text(`Factura generada el ${new Date().toLocaleString('es-ES')}`, 20, 260);
-      doc.text('Esta es una factura digital generada automáticamente.', 20, 270);
+      doc.text('CitiLights - Sistema de Gestión de Cuotas Residenciales', 20, yPosition + 20);
+      doc.text(`Factura generada el ${new Date().toLocaleString('es-ES')}`, 20, yPosition + 30);
+      doc.text('Esta es una factura digital generada automáticamente.', 20, yPosition + 40);
+      
+      // Línea decorativa en el pie
+      doc.setLineWidth(0.3);
+      doc.line(20, yPosition + 10, 190, yPosition + 10);
       
       // Descargar el PDF
       const fileName = `factura_cuota_${numeroFactura}.pdf`;
