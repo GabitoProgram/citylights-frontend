@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
 import { 
   Users, 
   DollarSign, 
@@ -25,6 +27,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import type { ConceptoMetadata, ConfiguracionCuota, NuevoConceptoDto, ApiResponse } from '../../types/cuota-config.types';
 
 interface Trabajador {
   id: number;
@@ -133,7 +136,7 @@ const PagosPage: React.FC = () => {
   });
 
   // Estados para editar cuota mensual
-  const [conceptosCuota, setConceptosCuota] = useState({
+  const [conceptosCuota, setConceptosCuota] = useState<Record<string, number>>({
     jardinFrente: 0,
     jardinGeneral: 0,
     recojoBasura: 0,
@@ -148,18 +151,30 @@ const PagosPage: React.FC = () => {
 
   const [montoTotal, setMontoTotal] = useState(0);
 
+  // 🆕 Estados para conceptos dinámicos (sin afectar funcionalidad existente)
+  const [conceptosDisponibles, setConceptosDisponibles] = useState<ConceptoMetadata[]>([]);
+  const [modoAvanzado, setModoAvanzado] = useState(false);
+  const [mostrarModalConcepto, setMostrarModalConcepto] = useState(false);
+  const [showAgregarConcepto, setShowAgregarConcepto] = useState(false);
+  const [nuevoConcepto, setNuevoConcepto] = useState<NuevoConceptoDto>({
+    key: '',
+    label: '',
+    descripcion: '',
+    activo: true
+  });
+
   // Calcular monto total automáticamente
   useEffect(() => {
     const total = Object.values(conceptosCuota).reduce((sum, value) => sum + value, 0);
     setMontoTotal(total);
   }, [conceptosCuota]);
 
-  // Funciones para manejar configuración de cuotas
+  // 📋 Cargar configuración (compatible con modo existente y dinámico)
   const cargarConfiguracionCuota = async () => {
     try {
       console.log('📋 Cargando configuración de cuota...');
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -170,11 +185,17 @@ const PagosPage: React.FC = () => {
         throw new Error('Error al cargar configuración');
       }
       
-      const data = await response.json();
+      const data: ApiResponse<ConfiguracionCuota> = await response.json();
       console.log('✅ Configuración cargada:', data);
       
       if (data.success && data.data) {
+        // Configurar conceptos (compatible con ambos modos)
         setConceptosCuota(data.data.conceptos);
+        
+        // Si hay metadata, actualizar conceptos disponibles
+        if (data.data.conceptosMetadata) {
+          setConceptosDisponibles(data.data.conceptosMetadata);
+        }
       }
     } catch (error) {
       console.error('❌ Error al cargar configuración de cuota:', error);
@@ -188,7 +209,7 @@ const PagosPage: React.FC = () => {
       console.log('📝 Conceptos a guardar:', conceptosCuota);
       
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -213,12 +234,129 @@ const PagosPage: React.FC = () => {
     }
   };
 
+  // 🆕 Funciones para conceptos dinámicos (nuevas, no afectan funcionalidad existente)
+  const cargarConceptosDisponibles = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config/conceptos', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data: ApiResponse<ConceptoMetadata[]> = await response.json();
+        if (data.success) {
+          setConceptosDisponibles(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error al cargar conceptos disponibles:', error);
+    }
+  };
+
+  const agregarNuevoConcepto = async () => {
+    try {
+      if (!nuevoConcepto.key || !nuevoConcepto.label) {
+        alert('⚠️ Por favor completa todos los campos requeridos');
+        return;
+      }
+
+      // Verificar si ya existe localmente
+      if (conceptosCuota.hasOwnProperty(nuevoConcepto.key)) {
+        alert('⚠️ Ya existe un concepto con esa clave');
+        return;
+      }
+
+      const token = localStorage.getItem('access_token');
+        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config/conceptos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(nuevoConcepto)
+      });
+
+      if (response.ok) {
+        const data: ApiResponse<ConceptoMetadata> = await response.json();
+        if (data.success) {
+          // Agregar el concepto al estado local
+          setConceptosCuota(prev => ({
+            ...prev,
+            [nuevoConcepto.key]: 0
+          }));
+
+          // Recargar conceptos disponibles
+          await cargarConceptosDisponibles();
+          
+          // Limpiar formulario y cerrar modal
+          setNuevoConcepto({ key: '', label: '', descripcion: '', activo: true });
+          setShowAgregarConcepto(false);
+          
+          alert(`✅ Concepto "${nuevoConcepto.label}" agregado exitosamente!`);
+        }
+      } else {
+        const error = await response.json();
+        alert(`❌ Error: ${error.message || 'No se pudo agregar el concepto'}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al agregar concepto:', error);
+      alert('❌ Error de conexión al agregar concepto');
+    }
+  };
+
+  const eliminarConcepto = async (key: string, label: string) => {
+    if (!confirm(`¿Estás seguro de eliminar el concepto "${label}"?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config/conceptos/${key}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data: ApiResponse<{ mensaje: string }> = await response.json();
+        if (data.success) {
+          // Remover del estado local
+          setConceptosCuota(prev => {
+            const newConceptos = { ...prev };
+            delete newConceptos[key];
+            return newConceptos;
+          });
+
+          // Recargar conceptos disponibles
+          await cargarConceptosDisponibles();
+          
+          alert(`✅ ${data.data.mensaje}`);
+        }
+      } else {
+        const error = await response.json();
+        alert(`❌ Error: ${error.message || 'No se pudo eliminar el concepto'}`);
+      }
+    } catch (error) {
+      console.error('❌ Error al eliminar concepto:', error);
+      alert('❌ Error de conexión al eliminar concepto');
+    }
+  };
+
   // Cargar configuración cuando se abra el tab editarCuota
   useEffect(() => {
     if (activeTab === 'editarCuota') {
       cargarConfiguracionCuota();
+      // Cargar conceptos disponibles si está en modo avanzado
+      if (modoAvanzado) {
+        cargarConceptosDisponibles();
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, modoAvanzado]);
 
   // Funciones de navegación y sidebar
   const handleLogout = () => {
@@ -282,37 +420,37 @@ const PagosPage: React.FC = () => {
       };
 
       // Cargar trabajadores
-      const trabajadoresRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador', { headers });
+        const trabajadoresRes = await fetch('http://localhost:3000/api/proxy/nomina/trabajador', { headers });
       if (trabajadoresRes.ok) {
         setTrabajadores(await trabajadoresRes.json());
       }
 
       // Cargar nóminas
-      const nominasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', { headers });
+        const nominasRes = await fetch('http://localhost:3000/api/proxy/nomina/nomina', { headers });
       if (nominasRes.ok) {
         setNominas(await nominasRes.json());
       }
 
       // Cargar pagos
-      const pagosRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar', { headers });
+        const pagosRes = await fetch('http://localhost:3000/api/proxy/nomina/pagar', { headers });
       if (pagosRes.ok) {
         setPagos(await pagosRes.json());
       }
 
       // Cargar facturas
-      const facturasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/factura', { headers });
+        const facturasRes = await fetch('http://localhost:3000/api/proxy/nomina/factura', { headers });
       if (facturasRes.ok) {
         setFacturas(await facturasRes.json());
       }
 
       // Cargar cuotas de residentes
-      const cuotasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residentes/historial', { headers });
+        const cuotasRes = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residentes/historial', { headers });
       if (cuotasRes.ok) {
         setCuotasResidentes(await cuotasRes.json());
       }
 
       // Cargar resumen de morosidad
-      const morosidadRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/morosidad/resumen', { headers });
+        const morosidadRes = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/morosidad/resumen', { headers });
       if (morosidadRes.ok) {
         setResumenMorosidad(await morosidadRes.json());
       }
@@ -339,12 +477,12 @@ const PagosPage: React.FC = () => {
         console.log('👤 Usuario actual:', user);
         
         // Obtener todos los usuarios (pueden requerir paginación)
-        let allUsers = [];
+        let allUsers: any[] = [];
         let page = 1;
         let hasMore = true;
         
         while (hasMore) {
-          const usuariosRes = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/users/list?page=${page}&limit=50`, { headers });
+            const usuariosRes = await fetch(`http://localhost:3000/api/proxy/users/list?page=${page}&limit=50`, { headers });
           
           console.log(`📡 Respuesta del servidor:`, {
             status: usuariosRes.status,
@@ -391,7 +529,7 @@ const PagosPage: React.FC = () => {
       }
 
       // 2. Obtener cuotas del mes actual del microservicio de nómina
-      const cuotasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residentes/historial', { headers });
+      const cuotasRes = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residentes/historial', { headers });
       
       const cuotas = cuotasRes.ok ? await cuotasRes.json() : [];
       console.log('📊 Cuotas obtenidas:', cuotas);
@@ -466,7 +604,7 @@ const PagosPage: React.FC = () => {
       console.log('Enviando datos del trabajador:', nuevoTrabajador);
       console.log('Token encontrado:', token ? 'Sí' : 'No');
       
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador', {
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/trabajador', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -495,7 +633,7 @@ const PagosPage: React.FC = () => {
   const crearNomina = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', {
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/nomina', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -526,7 +664,7 @@ const PagosPage: React.FC = () => {
   const crearPago = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar', {
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/pagar', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -567,7 +705,7 @@ const PagosPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador/${editandoTrabajador.id}`, {
+      const response = await fetch(`http://localhost:3000/api/proxy/nomina/trabajador/${editandoTrabajador.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -599,7 +737,7 @@ const PagosPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador/${id}`, {
+      const response = await fetch(`http://localhost:3000/api/proxy/nomina/trabajador/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -625,7 +763,7 @@ const PagosPage: React.FC = () => {
     try {
       // Primero crear una nómina automáticamente
       const token = localStorage.getItem('access_token');
-      const nominaResponse = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', {
+      const nominaResponse = await fetch('http://localhost:3000/api/proxy/nomina/nomina', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -646,7 +784,7 @@ const PagosPage: React.FC = () => {
       const nomina = await nominaResponse.json();
 
       // Crear sesión de pago con Stripe
-      const pagoResponse = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago/stripe/session', {
+      const pagoResponse = await fetch('http://localhost:3000/api/proxy/nomina/pago/stripe/session', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -678,7 +816,7 @@ const PagosPage: React.FC = () => {
   const confirmarPagoStripe = async (pagoId: number, sessionId: string) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago/confirmar/${pagoId}`, {
+      const response = await fetch(`http://localhost:3000/api/proxy/nomina/pago/confirmar/${pagoId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -713,27 +851,76 @@ const PagosPage: React.FC = () => {
   // Función para generar PDF de comprobante
   const generarComprobantePDF = async (pagoId: number) => {
     try {
+      // Obtener datos del pago y nómina
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pdf/comprobante/${pagoId}`, {
+      const response = await fetch(`http://localhost:3000/api/proxy/nomina/pago/${pagoId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
       });
-
-      if (response.ok) {
-        // Descargar el PDF
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `comprobante_pago_${pagoId}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-      } else {
+      if (!response.ok) {
         alert('Error generando el comprobante PDF');
+        return;
       }
+      const pago = await response.json();
+      const nomina = pago.nomina;
+      // Generar PDF manualmente con formato extendido y QR
+      let periodo = '';
+      if (nomina.mes !== undefined && nomina.anio !== undefined) {
+        periodo = `${nomina.mes.toString().padStart(2, '0')}/${nomina.anio}`;
+      } else if (nomina.fecha) {
+        const fechaObj = new Date(nomina.fecha);
+        periodo = `${(fechaObj.getMonth() + 1).toString().padStart(2, '0')}/${fechaObj.getFullYear()}`;
+      } else {
+        periodo = 'N/A';
+      }
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('SISTEMA DE NÓMINA', 20, 20);
+      doc.setFontSize(12);
+      doc.text('Comprobante de Pago', 20, 28);
+      doc.text('Empresa: CitiLights Residencial', 20, 36);
+      doc.text('NIT: 123456789', 20, 44);
+      doc.text('Dirección: Av. Principal #123', 20, 52);
+      doc.text('Teléfono: +591 2 1234567', 20, 60);
+      doc.setFontSize(13);
+      doc.text('INFORMACIÓN DEL TRABAJADOR', 20, 70);
+      doc.setFontSize(12);
+      doc.text(`Nombre: ${nomina.trabajador?.nombre ?? 'N/A'}`, 20, 78);
+      doc.text(`Tipo: ${nomina.trabajador?.tipo ?? 'N/A'}`, 20, 86);
+      doc.text(`Sueldo Base: $${nomina.trabajador?.sueldo?.toFixed(2) ?? '0.00'}`, 20, 94);
+      doc.setFontSize(13);
+      doc.text('DETALLES DE LA NÓMINA', 20, 104);
+      doc.setFontSize(12);
+      doc.text(`Período: ${periodo}`, 20, 112);
+      doc.text(`Cantidad Base: $${nomina.cantidad?.toFixed(2) ?? '0.00'}`, 20, 120);
+      doc.text(`Extras: $${nomina.extra?.toFixed(2) ?? '0.00'}`, 20, 128);
+      doc.text(`Total Nómina: $${(nomina.cantidad + nomina.extra).toFixed(2)}`, 20, 136);
+      doc.setFontSize(13);
+      doc.text('INFORMACIÓN DEL PAGO', 20, 146);
+      doc.setFontSize(12);
+      doc.text(`ID de Pago: ${pago.id ?? 'N/A'}`, 20, 154);
+      doc.text(`Monto Pagado: $${pago.monto?.toFixed(2) ?? '0.00'}`, 20, 162);
+      const fechaPago = pago.fecha ? new Date(pago.fecha) : null;
+      doc.text(`Fecha de Pago: ${fechaPago ? fechaPago.toLocaleDateString('es-ES') : 'N/A'}`, 20, 170);
+      doc.text(`Procesado por: ${pago.is_user ?? 'N/A'}`, 20, 178);
+      doc.setFontSize(11);
+      doc.text('Este es un comprobante de pago generado automáticamente', 20, 188);
+      doc.text('Para verificar la autenticidad, escanee el código QR', 20, 196);
+      // Generar QR con la librería 'qrcode' y agregarlo al PDF
+      try {
+        const qrData = `PagoID:${pago.id}|Trabajador:${nomina.trabajador?.nombre}|Monto:${pago.monto}`;
+        const qrImg = await QRCode.toDataURL(qrData, { width: 80, margin: 1 });
+        doc.addImage(qrImg, 'PNG', 150, 20, 40, 40);
+      } catch (err) {
+        // Si hay error al generar el QR, omitir
+      }
+      // Fecha de generación
+      const fechaGen = new Date();
+      doc.text(`Generado el: ${fechaGen.toLocaleDateString('es-ES')} ${fechaGen.toLocaleTimeString('es-ES')}`, 20, 206);
+      // Descargar el PDF
+      const fileName = `comprobante_nomina_${pagoId}.pdf`;
+      doc.save(fileName);
     } catch (error) {
       console.error('Error generando PDF:', error);
       alert('Error al generar el comprobante PDF.');
@@ -744,7 +931,7 @@ const PagosPage: React.FC = () => {
   const descargarFacturaPDF = async (facturaId: number) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/factura/pdf/${facturaId}`, {
+      const response = await fetch(`http://localhost:3000/api/proxy/nomina/factura/pdf/${facturaId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
@@ -772,12 +959,12 @@ const PagosPage: React.FC = () => {
   const generarReporte = async (tipo: 'general' | 'mensual') => {
     try {
       const token = localStorage.getItem('access_token');
-      let url = 'https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar/reporte-egresos';
+      let url = 'http://localhost:3000/api/proxy/nomina/pagar/reporte-egresos';
       
       if (tipo === 'mensual') {
         const mes = new Date().getMonth() + 1;
         const anio = new Date().getFullYear();
-        url = `https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar/reporte-egresos/${mes}/${anio}`;
+        url = `http://localhost:3000/api/proxy/nomina/pagar/reporte-egresos/${mes}/${anio}`;
       }
 
       const response = await fetch(url, {
@@ -797,7 +984,7 @@ const PagosPage: React.FC = () => {
   const verificarMorosidad = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/morosidad/verificar', {
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/morosidad/verificar', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -827,9 +1014,9 @@ const PagosPage: React.FC = () => {
         return;
       }
 
-      console.log('📡 Enviando solicitud a:', 'https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/crear-cuota');
-      
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/crear-cuota', {
+      console.log('📡 Enviando solicitud a:', 'http://localhost:3000/api/proxy/nomina/pago-mensual/residente/crear-cuota');
+
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residente/crear-cuota', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -873,7 +1060,7 @@ const PagosPage: React.FC = () => {
   const pagarCuotaResidente = async (userId: string, userName: string, userEmail: string) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/pagar-cuota-residente', {
+      const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/pagar-cuota-residente', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -952,7 +1139,7 @@ const PagosPage: React.FC = () => {
         let hasMore = true;
 
         while (hasMore) {
-          const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/login/users/list?page=${page}&limit=10`, {
+          const response = await fetch(`http://localhost:3000/api/proxy/login/users/list?page=${page}&limit=10`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -994,7 +1181,7 @@ const PagosPage: React.FC = () => {
 
       for (const usuario of usuarios) {
         try {
-          const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/crear-cuota', {
+          const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residente/crear-cuota', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1953,198 +2140,123 @@ const PagosPage: React.FC = () => {
             {activeTab === 'editarCuota' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-gray-900">💰 Editar Cuota Mensual</h2>
-                  <div className="bg-green-50 px-4 py-2 rounded-lg">
-                    <span className="text-green-700 font-semibold">
-                      Total: ${montoTotal.toFixed(2)}
-                    </span>
+                  <div className="flex items-center space-x-4">
+                    <h2 className="text-2xl font-bold text-gray-900">💰 Editar Cuota Mensual</h2>
+                    <button
+                      onClick={() => setModoAvanzado(!modoAvanzado)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                        modoAvanzado 
+                          ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {modoAvanzado ? '🔧 Modo Avanzado' : '⚙️ Modo Básico'}
+                    </button>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    {modoAvanzado && (
+                      <button
+                        onClick={() => setShowAgregarConcepto(true)}
+                        className="bg-green-500 text-white px-3 py-2 rounded-lg hover:bg-green-600 flex items-center text-sm"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Agregar Concepto
+                      </button>
+                    )}
+                    <div className="bg-green-50 px-4 py-2 rounded-lg">
+                      <span className="text-green-700 font-semibold">
+                        Total: ${montoTotal.toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Conceptos de la Cuota Mensual</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Jardín Frente del Bloque */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Jardín Frente del Bloque
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.jardinFrente}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          jardinFrente: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Jardín General */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Jardín General
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.jardinGeneral}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          jardinGeneral: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Recojo de Basura */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Recojo de Basura
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.recojoBasura}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          recojoBasura: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Limpieza */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Limpieza
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.limpieza}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          limpieza: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Luz Gradas */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Luz Gradas
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.luzGradas}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          luzGradas: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Cera */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Cera
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.cera}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          cera: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Ace */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Ace
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.ace}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          ace: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Lavandería */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Lavandería
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.lavanderia}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          lavanderia: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Ahorro Administración */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Ahorro Administración
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.ahorroAdministracion}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          ahorroAdministracion: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-
-                    {/* Agua */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Agua
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={conceptosCuota.agua}
-                        onChange={(e) => setConceptosCuota({
-                          ...conceptosCuota,
-                          agua: parseFloat(e.target.value) || 0
-                        })}
-                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
-                    </div>
+                  {/* Toggle para Modo Avanzado */}
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Conceptos de la Cuota Mensual
+                      {modoAvanzado && (
+                        <span className="text-sm text-gray-500 ml-2">
+                          ({Object.keys(conceptosCuota).length} conceptos)
+                        </span>
+                      )}
+                    </h3>
+                    <button
+                      onClick={() => setModoAvanzado(!modoAvanzado)}
+                      className={`inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        modoAvanzado 
+                          ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      {modoAvanzado ? 'Modo Básico' : 'Modo Avanzado'}
+                    </button>
                   </div>
+                  
+                  {/* Grid dinámica que funciona con ambos modos */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {Object.entries(conceptosCuota).map(([key, value]) => {
+                      // Buscar metadata del concepto si está disponible
+                      const metadata = conceptosDisponibles.find(c => c.key === key);
+                      const label = metadata?.label || key.charAt(0).toUpperCase() + key.slice(1);
+                      const descripcion = metadata?.descripcion;
+                      const montoBD = metadata?.monto ?? value;
+                      return (
+                        <div key={key} className="relative">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              {label}
+                            </label>
+                            {modoAvanzado && metadata && !['jardinFrente', 'jardinGeneral', 'recojoBasura', 'limpieza', 'luzGradas', 'cera', 'ace', 'lavanderia', 'ahorroAdministracion', 'agua'].includes(key) && (
+                              <button
+                                onClick={() => eliminarConcepto(key, label)}
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Eliminar concepto"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={value}
+                              onChange={(e) => setConceptosCuota({
+                                ...conceptosCuota,
+                                [key]: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              placeholder="0.00"
+                            />
+                            <span className="text-xs text-gray-500 font-semibold">Monto actual en BD: ${montoBD.toFixed(2)}</span>
+                          </div>
+                          {descripcion && modoAvanzado && (
+                            <p className="text-xs text-gray-500 mt-1">{descripcion}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Suma total de conceptos */}
+                  <div className="mt-4 text-right">
+                    <span className="text-lg font-bold text-green-700">Suma total de conceptos: ${Object.values(conceptosCuota).reduce((sum, v) => sum + v, 0).toFixed(2)}</span>
+                  </div>
+
+                  {/* Botón para agregar nuevo concepto (solo en modo avanzado) */}
+                  {modoAvanzado && (
+                    <div className="mt-6 text-center">
+                      <button
+                        onClick={() => setMostrarModalConcepto(true)}
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Agregar Nuevo Concepto
+                      </button>
+                    </div>
+                  )}
 
                   {/* Resumen y Botón de Guardar */}
                   <div className="mt-8 pt-6 border-t border-gray-200">
@@ -2362,6 +2474,87 @@ const PagosPage: React.FC = () => {
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 Actualizar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para Crear Nuevo Concepto */}
+      {mostrarModalConcepto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Crear Nuevo Concepto</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Clave del Concepto*
+                </label>
+                <input
+                  type="text"
+                  value={nuevoConcepto.key}
+                  onChange={(e) => setNuevoConcepto({
+                    ...nuevoConcepto,
+                    key: e.target.value.toLowerCase().replace(/\s+/g, '')
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="ej: mantenimiento"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Solo letras minúsculas, sin espacios ni caracteres especiales
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Nombre del Concepto*
+                </label>
+                <input
+                  type="text"
+                  value={nuevoConcepto.label}
+                  onChange={(e) => setNuevoConcepto({
+                    ...nuevoConcepto,
+                    label: e.target.value
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="ej: Mantenimiento General"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Descripción
+                </label>
+                <textarea
+                  value={nuevoConcepto.descripcion}
+                  onChange={(e) => setNuevoConcepto({
+                    ...nuevoConcepto,
+                    descripcion: e.target.value
+                  })}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Descripción opcional del concepto"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setMostrarModalConcepto(false);
+                  setNuevoConcepto({ key: '', label: '', descripcion: '', activo: true });
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={agregarNuevoConcepto}
+                disabled={!nuevoConcepto.key || !nuevoConcepto.label}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Crear Concepto
               </button>
             </div>
           </div>

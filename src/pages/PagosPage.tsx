@@ -158,25 +158,25 @@ const PagosPage: React.FC = () => {
       };
 
       // Cargar trabajadores
-      const trabajadoresRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador', { headers });
+      const trabajadoresRes = await fetch('http://localhost:3000/api/proxy/nomina/trabajador', { headers });
       if (trabajadoresRes.ok) {
         setTrabajadores(await trabajadoresRes.json());
       }
 
       // Cargar nóminas
-      const nominasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', { headers });
+      const nominasRes = await fetch('http://localhost:3000/api/proxy/nomina/nomina', { headers });
       if (nominasRes.ok) {
         setNominas(await nominasRes.json());
       }
 
       // Cargar pagos
-      const pagosRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar', { headers });
+      const pagosRes = await fetch('http://localhost:3000/api/proxy/nomina/pagar', { headers });
       if (pagosRes.ok) {
         setPagos(await pagosRes.json());
       }
 
       // Cargar facturas
-      const facturasRes = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/factura', { headers });
+      const facturasRes = await fetch('http://localhost:3000/api/proxy/nomina/factura', { headers });
       if (facturasRes.ok) {
         setFacturas(await facturasRes.json());
       }
@@ -192,7 +192,7 @@ const PagosPage: React.FC = () => {
       console.log('Enviando datos del trabajador:', nuevoTrabajador);
       console.log('Token encontrado:', token ? 'Sí' : 'No');
       
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador', {
+  const response = await fetch('http://localhost:3000/api/proxy/nomina/trabajador', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -221,7 +221,7 @@ const PagosPage: React.FC = () => {
   const crearNomina = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', {
+  const response = await fetch('http://localhost:3000/api/proxy/nomina/nomina', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -252,7 +252,7 @@ const PagosPage: React.FC = () => {
   const crearPago = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar', {
+  const response = await fetch('http://localhost:3000/api/proxy/nomina/pagar', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -293,7 +293,7 @@ const PagosPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador/${editandoTrabajador.id}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/trabajador/${editandoTrabajador.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -325,7 +325,7 @@ const PagosPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/trabajador/${id}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/trabajador/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -351,7 +351,7 @@ const PagosPage: React.FC = () => {
     try {
       // Primero crear una nómina automáticamente
       const token = localStorage.getItem('access_token');
-      const nominaResponse = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/nomina', {
+  const nominaResponse = await fetch('http://localhost:3000/api/proxy/nomina/nomina', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -372,7 +372,7 @@ const PagosPage: React.FC = () => {
       const nomina = await nominaResponse.json();
 
       // Crear sesión de pago con Stripe
-      const pagoResponse = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago/stripe/session', {
+  const pagoResponse = await fetch('http://localhost:3000/api/proxy/nomina/pago/stripe/session', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -404,7 +404,7 @@ const PagosPage: React.FC = () => {
   const confirmarPagoStripe = async (pagoId: number, sessionId: string) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago/confirmar/${pagoId}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/pago/confirmar/${pagoId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -439,7 +439,7 @@ const PagosPage: React.FC = () => {
           if (descargarFactura) {
             try {
               // Llamar al servicio de booking para generar la factura PDF
-              const facturaResponse = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/booking/factura/generar`, {
+              const facturaResponse = await fetch(`http://localhost:3000/api/proxy/booking-copia/factura/generar`, {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${token}`,
@@ -493,7 +493,7 @@ const PagosPage: React.FC = () => {
   const generarComprobantePDF = async (pagoId: number) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pdf/comprobante/${pagoId}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/pdf/comprobante/${pagoId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
@@ -523,7 +523,7 @@ const PagosPage: React.FC = () => {
   const descargarFacturaPDF = async (facturaId: number) => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/factura/pdf/${facturaId}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/factura/pdf/${facturaId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
@@ -551,12 +551,12 @@ const PagosPage: React.FC = () => {
   const generarReporte = async (tipo: 'general' | 'mensual') => {
     try {
       const token = localStorage.getItem('access_token');
-      let url = 'https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar/reporte-egresos';
+      let url = 'http://localhost:3000/api/proxy/nomina/pagar/reporte-egresos';
       
       if (tipo === 'mensual') {
         const mes = new Date().getMonth() + 1;
         const anio = new Date().getFullYear();
-        url = `https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pagar/reporte-egresos/${mes}/${anio}`;
+        url = `http://localhost:3000/api/proxy/nomina/pagar/reporte-egresos/${mes}/${anio}`;
       }
 
       const response = await fetch(url, {

@@ -192,7 +192,7 @@ export default function ReportesAdminPage() {
       console.log('3️⃣ [REPORTES ADMIN] Cargando cuotas de residentes...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseCuotas = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residentes/historial', {
+  const responseCuotas = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residentes/historial', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -216,7 +216,7 @@ export default function ReportesAdminPage() {
       console.log('4️⃣ [REPORTES ADMIN] Cargando resumen de morosidad...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseMorosidad = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/morosidad/resumen', {
+  const responseMorosidad = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/morosidad/resumen', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'

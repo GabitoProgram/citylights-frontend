@@ -185,7 +185,7 @@ export default function ReportesPage() {
       console.log('3️⃣ [REPORTES] Cargando cuotas de residentes...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseCuotas = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residentes/historial', {
+  const responseCuotas = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residentes/historial', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -209,7 +209,7 @@ export default function ReportesPage() {
       console.log('4️⃣ [REPORTES] Cargando resumen de morosidad...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseMorosidad = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/morosidad/resumen', {
+  const responseMorosidad = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/morosidad/resumen', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -439,7 +439,7 @@ export default function ReportesPage() {
       if (fechaInicio) params.append('fechaInicio', fechaInicio);
       if (fechaFin) params.append('fechaFin', fechaFin);
       
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/reportes/datos?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
@@ -537,6 +537,31 @@ export default function ReportesPage() {
         });
       }
 
+      // Tabla de cuotas de residentes
+      if (datos.cuotasResidentes && datos.cuotasResidentes.length > 0) {
+        let currentY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 15 : 120;
+        doc.setFontSize(14);
+        doc.setTextColor(75, 0, 130);
+        doc.text('CUOTAS DE RESIDENTES', 20, currentY);
+
+        const cuotasData = datos.cuotasResidentes.map((cuota: any) => [
+          cuota.userName,
+          `${cuota.mes}/${cuota.anio}`,
+          `$${(cuota.monto || 0).toLocaleString()}`,
+          cuota.estado === 'PAGADO' ? 'Pagado' : 'Pendiente',
+          cuota.fechaPago ? new Date(cuota.fechaPago).toLocaleDateString('es-ES') : '-'
+        ]);
+
+        autoTable(doc, {
+          startY: currentY + 5,
+          head: [['Usuario', 'Mes/Año', 'Monto', 'Estado', 'Fecha Pago']],
+          body: cuotasData,
+          theme: 'striped',
+          headStyles: { fillColor: [59, 130, 246] }, // Azul
+          margin: { left: 20, right: 20 }
+        });
+      }
+
       // Descargar PDF
       const filename = `reporte-financiero-${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(filename);
@@ -563,7 +588,7 @@ export default function ReportesPage() {
       if (fechaInicio) params.append('fechaInicio', fechaInicio);
       if (fechaFin) params.append('fechaFin', fechaFin);
       
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/reportes/datos?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         }
@@ -631,6 +656,23 @@ export default function ReportesPage() {
 
         const egresosSheet = XLSX.utils.aoa_to_sheet(egresosData);
         XLSX.utils.book_append_sheet(workbook, egresosSheet, 'Egresos');
+      }
+
+      // Hoja de cuotas de residentes
+      if (datos.cuotasResidentes && datos.cuotasResidentes.length > 0) {
+        const cuotasData = [
+          ['Usuario', 'Mes/Año', 'Monto', 'Estado', 'Fecha Pago'],
+          ...datos.cuotasResidentes.map((cuota: any) => [
+            cuota.userName,
+            `${cuota.mes}/${cuota.anio}`,
+            cuota.monto || 0,
+            cuota.estado === 'PAGADO' ? 'Pagado' : 'Pendiente',
+            cuota.fechaPago ? new Date(cuota.fechaPago).toLocaleDateString('es-ES') : '-'
+          ])
+        ];
+
+        const cuotasSheet = XLSX.utils.aoa_to_sheet(cuotasData);
+        XLSX.utils.book_append_sheet(workbook, cuotasSheet, 'Cuotas Residentes');
       }
 
       // Descargar Excel

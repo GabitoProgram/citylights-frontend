@@ -5,7 +5,7 @@ class ApiService {
   
   constructor() {
     this.api = axios.create({
-      baseURL: 'https://citylights-gateway-production.up.railway.app/api/proxy',
+      baseURL: 'http://localhost:3000/api/proxy',
       withCredentials: true,
     });
     

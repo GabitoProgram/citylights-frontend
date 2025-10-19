@@ -59,6 +59,7 @@ interface ResumenFinanciero {
   crecimientoIngresos: number;
   crecimientoEgresos: number;
   areasActivas?: number;
+  periodo?: string;
 }
 
 interface CuotaResidente {
@@ -108,12 +109,13 @@ export default function ReportesPage() {
   const [resumenMorosidad, setResumenMorosidad] = useState<ResumenMorosidad | null>(null);
   const [pagosBookingDaños, setPagosBookingDaños] = useState<PagoBookingDaño[]>([]);
   const [resumenFinanciero, setResumenFinanciero] = useState<ResumenFinanciero>({
-    totalIngresos: 0,
-    totalEgresos: 0,
-    balance: 0,
-    crecimientoIngresos: 0,
-    crecimientoEgresos: 0,
-    areasActivas: 0
+  totalIngresos: 0,
+  totalEgresos: 0,
+  balance: 0,
+  crecimientoIngresos: 0,
+  crecimientoEgresos: 0,
+  areasActivas: 0,
+  periodo: ''
   });
   
   // Estados para filtros
@@ -175,7 +177,7 @@ export default function ReportesPage() {
       console.log('3️⃣ [REPORTES] Cargando cuotas de residentes...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseCuotas = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/cuotas', {
+        const responseCuotas = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residente/cuotas', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -199,7 +201,7 @@ export default function ReportesPage() {
       console.log('4️⃣ [REPORTES] Cargando resumen de morosidad...');
       try {
         const token = localStorage.getItem('access_token');
-        const responseMorosidad = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/morosidad', {
+        const responseMorosidad = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residente/morosidad', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -418,158 +420,188 @@ export default function ReportesPage() {
   };
 
   const exportarPDF = async () => {
-    try {
-      setExportandoPDF(true);
-      console.log('📄 [FRONTEND] Iniciando generación de PDF...');
-      
-      // Obtener datos del backend
-      const token = localStorage.getItem('access_token');
-      const params = new URLSearchParams();
-      
-      if (fechaInicio) params.append('fechaInicio', fechaInicio);
-      if (fechaFin) params.append('fechaFin', fechaFin);
-      
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        }
-      });
+  try {
+    setExportandoPDF(true);
+    console.log('📄 [PDF] Generando con datos locales...');
+    console.log('  - Cuotas:', cuotasResidentes.length);
+    console.log('  - Morosidad:', resumenMorosidad);
 
-      if (!response.ok) {
-        throw new Error('Error al obtener datos del reporte');
-      }
+    // Generar PDF directamente con los estados locales
+    const doc = new jsPDF();
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || 'Error en la respuesta del servidor');
-      }
+    // Título
+    doc.setFontSize(20);
+    doc.setTextColor(75, 0, 130);
+    doc.text('REPORTE FINANCIERO CITYLIGHTS', 20, 25);
 
-      const datos = result.data;
-      console.log('📄 [FRONTEND] Datos obtenidos:', datos);
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Generado: ${new Date().toLocaleString('es-ES')}`, 20, 35);
 
-      // Generar PDF con jsPDF
-      const doc = new jsPDF();
-      
-      // Configurar fuente y título
-      doc.setFontSize(20);
-      doc.setTextColor(75, 0, 130); // Púrpura
-      doc.text('REPORTE FINANCIERO CITYLIGHTS', 20, 25);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(0, 0, 0);
-      doc.text(`Período: ${datos.resumen.periodo}`, 20, 35);
-      doc.text(`Generado: ${datos.resumen.fechaGeneracion}`, 20, 42);
+    // Resumen financiero
+    doc.setFontSize(16);
+    doc.setTextColor(75, 0, 130);
+    doc.text('RESUMEN FINANCIERO', 20, 48);
 
-      // Resumen financiero
-      doc.setFontSize(16);
+    const resumenData = [
+      ['Total Ingresos', `$${resumenFinanciero.totalIngresos.toLocaleString()}`],
+      ['Total Egresos', `$${resumenFinanciero.totalEgresos.toLocaleString()}`],
+      ['Balance', `$${resumenFinanciero.balance.toLocaleString()}`]
+    ];
+
+    autoTable(doc, {
+      startY: 55,
+      head: [['Concepto', 'Monto']],
+      body: resumenData,
+      theme: 'grid',
+      headStyles: { fillColor: [147, 51, 234] },
+      margin: { left: 20, right: 20 }
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 15;
+
+    // Tabla de ingresos
+    if (ingresosAreas.length > 0) {
+      doc.setFontSize(14);
       doc.setTextColor(75, 0, 130);
-      doc.text('RESUMEN FINANCIERO', 20, 58);
-      
-      const resumenData = [
-        ['Total Ingresos', `$${datos.resumen.totalIngresos.toLocaleString()}`],
-        ['Total Egresos', `$${datos.resumen.totalEgresos.toLocaleString()}`],
-        ['Balance', `$${datos.resumen.balance.toLocaleString()}`]
-      ];
+      doc.text('INGRESOS POR ÁREA', 20, currentY);
+
+      const ingresosData = ingresosAreas.map(ing => [
+        ing.nombre,
+        ing.cantidadReservas.toString(),
+        `$${ing.totalIngresos.toLocaleString()}`
+      ]);
 
       autoTable(doc, {
-        startY: 65,
-        head: [['Concepto', 'Monto']],
-        body: resumenData,
-        theme: 'grid',
-        headStyles: { fillColor: [147, 51, 234] }, // Púrpura
+        startY: currentY + 5,
+        head: [['Área Común', 'Reservas', 'Total']],
+        body: ingresosData,
+        theme: 'striped',
+        headStyles: { fillColor: [34, 197, 94] },
         margin: { left: 20, right: 20 }
       });
 
-      // Tabla de ingresos (solo si hay datos)
-      if (datos.ingresos.length > 0) {
-        let currentY = (doc as any).lastAutoTable.finalY + 15;
-        doc.setFontSize(14);
-        doc.setTextColor(75, 0, 130);
-        doc.text('INGRESOS POR ÁREA', 20, currentY);
-
-        const ingresosData = datos.ingresos.map((ing: any) => [
-          ing.nombre,
-          ing.cantidadReservas.toString(),
-          `$${ing.totalIngresos.toLocaleString()}`
-        ]);
-
-        autoTable(doc, {
-          startY: currentY + 5,
-          head: [['Área Común', 'Reservas', 'Total Ingresos']],
-          body: ingresosData,
-          theme: 'striped',
-          headStyles: { fillColor: [34, 197, 94] }, // Verde
-          margin: { left: 20, right: 20 }
-        });
-      }
-
-      // Tabla de egresos
-      if (datos.egresos.length > 0) {
-        let currentY = datos.ingresos.length > 0 ? (doc as any).lastAutoTable.finalY + 15 : 100;
-        doc.setFontSize(14);
-        doc.setTextColor(75, 0, 130);
-        doc.text('EGRESOS POR EMPLEADO', 20, currentY);
-
-        const egresosData = datos.egresos.map((egr: any) => [
-          egr.nomina?.trabajador?.nombre || 'N/A',
-          egr.nomina?.trabajador?.tipo || 'N/A',
-          new Date(egr.fechaPago).toLocaleDateString('es-ES'),
-          `$${egr.monto.toLocaleString()}`
-        ]);
-
-        autoTable(doc, {
-          startY: currentY + 5,
-          head: [['Empleado', 'Tipo', 'Fecha Pago', 'Monto']],
-          body: egresosData,
-          theme: 'striped',
-          headStyles: { fillColor: [239, 68, 68] }, // Rojo
-          margin: { left: 20, right: 20 }
-        });
-      }
-
-      // Descargar PDF
-      const filename = `reporte-financiero-${new Date().toISOString().split('T')[0]}.pdf`;
-      doc.save(filename);
-      
-      console.log('✅ [FRONTEND] PDF generado y descargado exitosamente');
-      
-    } catch (error) {
-      console.error('❌ [FRONTEND] Error exportando a PDF:', error);
-      alert('Error al generar el reporte PDF. Inténtalo de nuevo.');
-    } finally {
-      setExportandoPDF(false);
+      currentY = (doc as any).lastAutoTable.finalY + 15;
     }
-  };
+
+    // Tabla de egresos
+    if (egresosEmpleados.length > 0) {
+      if (currentY > 250) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(14);
+      doc.setTextColor(75, 0, 130);
+      doc.text('EGRESOS POR EMPLEADO', 20, currentY);
+
+      const egresosData = egresosEmpleados.map(egr => [
+        egr.nombre,
+        egr.tipo,
+        egr.cantidadPagos.toString(),
+        `$${egr.totalPagado.toLocaleString()}`
+      ]);
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Empleado', 'Tipo', 'Pagos', 'Total']],
+        body: egresosData,
+        theme: 'striped',
+        headStyles: { fillColor: [239, 68, 68] },
+        margin: { left: 20, right: 20 }
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+    }
+
+    // Tabla de Cuotas de Residentes
+    console.log('[DEBUG] cuotasResidentes:', cuotasResidentes);
+    if (cuotasResidentes.length > 0) {
+      console.log(`[DEBUG] Hay ${cuotasResidentes.length} cuotas para exportar en PDF`);
+      if (currentY > 250) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(14);
+      doc.setTextColor(75, 0, 130);
+      doc.text('CUOTAS DE RESIDENTES', 20, currentY);
+
+      const cuotasData = cuotasResidentes.map(cuota => [
+        cuota.userName,
+        cuota.estado,
+        `$${cuota.montoBase.toLocaleString()}`,
+        `$${cuota.montoMorosidad.toLocaleString()}`,
+        `$${cuota.montoTotal.toLocaleString()}`,
+        new Date(cuota.fechaVencimiento).toLocaleDateString('es-ES')
+      ]);
+      console.log('[DEBUG] Datos de cuotas para PDF:', cuotasData);
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Residente', 'Estado', 'Base', 'Morosidad', 'Total', 'Vencimiento']],
+        body: cuotasData,
+        theme: 'striped',
+        headStyles: { fillColor: [99, 102, 241] },
+        margin: { left: 20, right: 20 },
+        styles: { fontSize: 8 }
+      });
+
+      currentY = (doc as any).lastAutoTable.finalY + 15;
+      console.log('✅ Tabla de cuotas agregada al PDF');
+    }
+
+    // Resumen de Morosidad
+    if (resumenMorosidad && resumenMorosidad.totalCuotasMorosas > 0) {
+      if (currentY > 250) {
+        doc.addPage();
+        currentY = 20;
+      }
+
+      doc.setFontSize(14);
+      doc.setTextColor(220, 38, 38);
+      doc.text('⚠️ ALERTA DE MOROSIDAD', 20, currentY);
+
+      const morosidadData = [
+        ['Total Cuotas Morosas', resumenMorosidad.totalCuotasMorosas.toString()],
+        ['Monto a Recuperar', `$${resumenMorosidad.montoTotalAPagar.toLocaleString()}`]
+      ];
+
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Concepto', 'Valor']],
+        body: morosidadData,
+        theme: 'grid',
+        headStyles: { fillColor: [220, 38, 38] },
+        margin: { left: 20, right: 20 }
+      });
+
+      console.log('✅ Resumen de morosidad agregado al PDF');
+    }
+
+    // Descargar
+    const filename = `reporte-financiero-${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(filename);
+    console.log('✅ PDF descargado exitosamente');
+
+  } catch (error) {
+    console.error('❌ Error generando PDF:', error);
+    alert('Error al generar el PDF');
+  } finally {
+    setExportandoPDF(false);
+  }
+};
 
   const exportarExcel = async () => {
     try {
       setExportandoExcel(true);
       console.log('📊 [FRONTEND] Iniciando generación de Excel...');
+      console.log('📊 Estados actuales:');
+      console.log('  - ingresosAreas:', ingresosAreas.length);
+      console.log('  - egresosEmpleados:', egresosEmpleados.length);
+      console.log('  - cuotasResidentes:', cuotasResidentes.length);
+      console.log('  - resumenMorosidad:', resumenMorosidad);
       
-      // Obtener datos del backend
-      const token = localStorage.getItem('access_token');
-      const params = new URLSearchParams();
-      
-      if (fechaInicio) params.append('fechaInicio', fechaInicio);
-      if (fechaFin) params.append('fechaFin', fechaFin);
-      
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/reportes/datos?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Error al obtener datos del reporte');
-      }
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || 'Error en la respuesta del servidor');
-      }
-
-      const datos = result.data;
-      console.log('📊 [FRONTEND] Datos obtenidos:', datos);
 
       // Crear workbook de Excel
       const workbook = XLSX.utils.book_new();
@@ -577,24 +609,24 @@ export default function ReportesPage() {
       // Hoja de resumen
       const resumenData = [
         ['REPORTE FINANCIERO CITYLIGHTS'],
-        [`Período: ${datos.resumen.periodo}`],
-        [`Generado: ${datos.resumen.fechaGeneracion}`],
+        [`Período: ${resumenFinanciero.periodo || ''}`],
+        [`Generado: ${new Date().toLocaleString('es-ES')}`],
         [],
         ['RESUMEN FINANCIERO'],
         ['Concepto', 'Monto'],
-        ['Total Ingresos', datos.resumen.totalIngresos],
-        ['Total Egresos', datos.resumen.totalEgresos],
-        ['Balance', datos.resumen.balance]
+        ['Total Ingresos', resumenFinanciero.totalIngresos ?? 0],
+        ['Total Egresos', resumenFinanciero.totalEgresos ?? 0],
+        ['Balance', resumenFinanciero.balance ?? 0]
       ];
 
       const resumenSheet = XLSX.utils.aoa_to_sheet(resumenData);
       XLSX.utils.book_append_sheet(workbook, resumenSheet, 'Resumen');
 
       // Hoja de ingresos (solo si hay datos)
-      if (datos.ingresos.length > 0) {
+      if (ingresosAreas.length > 0) {
         const ingresosData = [
           ['Área Común', 'Cantidad Reservas', 'Total Ingresos', 'Ingreso Promedio'],
-          ...datos.ingresos.map((ing: any) => [
+          ...ingresosAreas.map((ing: any) => [
             ing.nombre,
             ing.cantidadReservas,
             ing.totalIngresos,
@@ -607,20 +639,64 @@ export default function ReportesPage() {
       }
 
       // Hoja de egresos
-      if (datos.egresos.length > 0) {
+      if (egresosEmpleados.length > 0) {
         const egresosData = [
-          ['Empleado', 'Tipo', 'Fecha Pago', 'Monto', 'Nómina ID'],
-          ...datos.egresos.map((egr: any) => [
-            egr.nomina?.trabajador?.nombre || 'N/A',
-            egr.nomina?.trabajador?.tipo || 'N/A',
-            new Date(egr.fechaPago).toLocaleDateString('es-ES'),
-            egr.monto,
-            egr.nomina?.id || 'N/A'
+          ['Empleado', 'Tipo', 'Total Pagado', 'Cantidad Pagos', 'Sueldo Promedio'],
+          ...egresosEmpleados.map((egr: any) => [
+            egr.nombre,
+            egr.tipo,
+            egr.totalPagado,
+            egr.cantidadPagos,
+            egr.sueldoPromedio
           ])
         ];
 
         const egresosSheet = XLSX.utils.aoa_to_sheet(egresosData);
         XLSX.utils.book_append_sheet(workbook, egresosSheet, 'Egresos');
+      }
+
+      // Hoja de Cuotas de Residentes
+      if (cuotasResidentes.length > 0) {
+        const cuotasData = [
+          ['Residente', 'Email', 'Estado', 'Monto Base', 'Morosidad', 'Total', 'Fecha Vencimiento', 'Fecha Creación', 'Fecha Pago'],
+          ...cuotasResidentes.map((cuota: any) => [
+            cuota.userName,
+            cuota.userEmail,
+            cuota.estado,
+            cuota.montoBase,
+            cuota.montoMorosidad,
+            cuota.montoTotal,
+            cuota.fechaVencimiento ? new Date(cuota.fechaVencimiento).toLocaleDateString('es-ES') : '',
+            cuota.fechaCreacion ? new Date(cuota.fechaCreacion).toLocaleDateString('es-ES') : '',
+            cuota.fechaPago ? new Date(cuota.fechaPago).toLocaleDateString('es-ES') : 'Pendiente'
+          ])
+        ];
+
+        const cuotasSheet = XLSX.utils.aoa_to_sheet(cuotasData);
+        XLSX.utils.book_append_sheet(workbook, cuotasSheet, 'Cuotas Residentes');
+      }
+
+      // Hoja de Resumen de Morosidad
+      if (resumenMorosidad && resumenMorosidad.totalCuotasMorosas > 0) {
+        const morosidadData = [
+          ['RESUMEN DE MOROSIDAD'],
+          [],
+          ['Total Cuotas Morosas', resumenMorosidad.totalCuotasMorosas],
+          ['Monto Total a Recuperar', resumenMorosidad.montoTotalAPagar],
+          [],
+          ['DETALLE DE CUOTAS MOROSAS'],
+          ['Residente', 'Email', 'Monto Total', 'Fecha Vencimiento', '% Morosidad'],
+          ...resumenMorosidad.cuotasMorosas.map((cuota: any) => [
+            cuota.userName,
+            cuota.userEmail,
+            cuota.montoTotal,
+            cuota.fechaVencimiento ? new Date(cuota.fechaVencimiento).toLocaleDateString('es-ES') : '',
+            `${cuota.porcentajeMorosidad}%`
+          ])
+        ];
+
+        const morosidadSheet = XLSX.utils.aoa_to_sheet(morosidadData);
+        XLSX.utils.book_append_sheet(workbook, morosidadSheet, 'Morosidad');
       }
 
       // Descargar Excel

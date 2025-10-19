@@ -94,7 +94,7 @@ const MisPagosPage: React.FC = () => {
         return;
       }
 
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/${user.id}/cuotas`, {
+  const response = await fetch(`http://localhost:3000/api/proxy/nomina/pago-mensual/residente/${user.id}/cuotas`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -142,7 +142,7 @@ const MisPagosPage: React.FC = () => {
       }
 
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/residente/cuota', {
+  const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/residente/cuota', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -178,7 +178,7 @@ const MisPagosPage: React.FC = () => {
       console.log('🔄 Confirmando pago de Stripe...', { cuotaId, sessionId });
       
       const token = localStorage.getItem('access_token');
-      const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/pago-mensual/confirmar-pago-cuota', {
+  const response = await fetch('http://localhost:3000/api/proxy/nomina/pago-mensual/confirmar-pago-cuota', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -233,115 +233,60 @@ const MisPagosPage: React.FC = () => {
     try {
       console.log('🔄 Generando PDF desde el frontend para cuota:', cuota.id);
       
-      // 🆕 OBTENER CONFIGURACIÓN DE CONCEPTOS DE CUOTA
+      // 🆕 OBTENER CONFIGURACIÓN DE CONCEPTOS DE CUOTA Y METADATA
       let conceptosDetalle: Array<{descripcion: string, cantidad: number, precio: number, total: number}> = [];
       
       try {
         const token = localStorage.getItem('access_token');
-        const response = await fetch('https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config', {
+        
+        // Obtener configuración de cuota
+  const responseConfig = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config', {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
         
-        if (response.ok) {
-          const data = await response.json();
-          console.log('✅ Configuración de conceptos obtenida:', data);
+        // Obtener metadata de conceptos
+  const responseMetadata = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config/conceptos', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (responseConfig.ok && responseMetadata.ok) {
+          const configData = await responseConfig.json();
+          const metadataData = await responseMetadata.json();
           
-          if (data.success && data.data && data.data.conceptos) {
-            const conceptos = data.data.conceptos;
+          console.log('✅ Configuración de conceptos obtenida:', configData);
+          console.log('✅ Metadata de conceptos obtenida:', metadataData);
+          
+          if (configData.success && configData.data && configData.data.conceptos) {
+            const conceptos = configData.data.conceptos;
+            const conceptosMetadata = metadataData.success ? metadataData.data : [];
             
-            // Solo agregar conceptos que tengan valor mayor a 0
-            if (conceptos.jardinFrente > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Jardín Frente',
-                cantidad: 1,
-                precio: conceptos.jardinFrente,
-                total: conceptos.jardinFrente
-              });
-            }
+            // Crear un mapa de metadata por key para búsqueda rápida
+            const metadataMap = conceptosMetadata.reduce((map, concepto) => {
+              map[concepto.key] = concepto;
+              return map;
+            }, {});
             
-            if (conceptos.jardinGeneral > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Jardín General',
-                cantidad: 1,
-                precio: conceptos.jardinGeneral,
-                total: conceptos.jardinGeneral
-              });
-            }
-            
-            if (conceptos.recojoBasura > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Recojo de Basura',
-                cantidad: 1,
-                precio: conceptos.recojoBasura,
-                total: conceptos.recojoBasura
-              });
-            }
-            
-            if (conceptos.limpieza > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Limpieza',
-                cantidad: 1,
-                precio: conceptos.limpieza,
-                total: conceptos.limpieza
-              });
-            }
-            
-            if (conceptos.luzGradas > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Luz Gradas',
-                cantidad: 1,
-                precio: conceptos.luzGradas,
-                total: conceptos.luzGradas
-              });
-            }
-            
-            if (conceptos.cera > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Cera',
-                cantidad: 1,
-                precio: conceptos.cera,
-                total: conceptos.cera
-              });
-            }
-            
-            if (conceptos.ace > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Ace',
-                cantidad: 1,
-                precio: conceptos.ace,
-                total: conceptos.ace
-              });
-            }
-            
-            if (conceptos.lavanderia > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Lavandería',
-                cantidad: 1,
-                precio: conceptos.lavanderia,
-                total: conceptos.lavanderia
-              });
-            }
-            
-            if (conceptos.ahorroAdministracion > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Ahorro Administración',
-                cantidad: 1,
-                precio: conceptos.ahorroAdministracion,
-                total: conceptos.ahorroAdministracion
-              });
-            }
-            
-            if (conceptos.agua > 0) {
-              conceptosDetalle.push({
-                descripcion: 'Agua',
-                cantidad: 1,
-                precio: conceptos.agua,
-                total: conceptos.agua
-              });
-            }
+            // Recorrer todos los conceptos dinámicamente
+            Object.entries(conceptos).forEach(([key, valor]) => {
+              const metadata = metadataMap[key];
+              // Usar el monto real de la metadata si existe
+              const montoReal = metadata?.monto ?? valor;
+              const descripcion = metadata?.label || key.charAt(0).toUpperCase() + key.slice(1);
+              if (typeof montoReal === 'number' && montoReal > 0) {
+                conceptosDetalle.push({
+                  descripcion: descripcion,
+                  cantidad: 1,
+                  precio: montoReal,
+                  total: montoReal
+                });
+              }
+            });
             
             console.log(`✅ Desglose de conceptos preparado: ${conceptosDetalle.length} items`);
           }
@@ -382,10 +327,16 @@ const MisPagosPage: React.FC = () => {
       doc.text(`Número de Factura: ${numeroFactura}`, 20, 50);
       doc.text(`Fecha de Emisión: ${new Date().toLocaleDateString('es-ES')}`, 20, 60);
       doc.text(`Período: ${cuota.mes}/${cuota.anio}`, 20, 70);
+      // Agregar fecha de pago si existe
+      if (cuota.fechaPago) {
+        doc.text(`Fecha de Pago: ${new Date(cuota.fechaPago).toLocaleDateString('es-ES')}`, 20, 80);
+      }
       
       // LÍNEA SEPARADORA
-      doc.setLineWidth(0.5);
-      doc.line(20, 80, 190, 80);
+  // Ajustar la posición de la línea separadora si se agregó fecha de pago
+  let lineaY = cuota.fechaPago ? 90 : 80;
+  doc.setLineWidth(0.5);
+  doc.line(20, lineaY, 190, lineaY);
       
       // DATOS DEL CLIENTE
       doc.setFontSize(14);
