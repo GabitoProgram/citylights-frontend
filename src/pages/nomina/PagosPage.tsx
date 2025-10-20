@@ -1,3 +1,5 @@
+  // URL base para todas las operaciones de conceptos
+  const API_BASE = 'http://localhost:3000/api/proxy/nomina/cuota-config';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
@@ -238,7 +240,7 @@ const PagosPage: React.FC = () => {
   const cargarConceptosDisponibles = async () => {
     try {
       const token = localStorage.getItem('access_token');
-        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config/conceptos', {
+      const response = await fetch(`${API_BASE}/conceptos`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -246,7 +248,7 @@ const PagosPage: React.FC = () => {
       });
       
       if (response.ok) {
-        const data: ApiResponse<ConceptoMetadata[]> = await response.json();
+        const data = await response.json();
         if (data.success) {
           setConceptosDisponibles(data.data);
         }
@@ -270,7 +272,7 @@ const PagosPage: React.FC = () => {
       }
 
       const token = localStorage.getItem('access_token');
-        const response = await fetch('http://localhost:3000/api/proxy/nomina/cuota-config/conceptos', {
+      const response = await fetch(`${API_BASE}/conceptos`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,21 +282,12 @@ const PagosPage: React.FC = () => {
       });
 
       if (response.ok) {
-        const data: ApiResponse<ConceptoMetadata> = await response.json();
+        const data = await response.json();
         if (data.success) {
-          // Agregar el concepto al estado local
-          setConceptosCuota(prev => ({
-            ...prev,
-            [nuevoConcepto.key]: 0
-          }));
-
-          // Recargar conceptos disponibles
+          setConceptosCuota(prev => ({ ...prev, [nuevoConcepto.key]: 0 }));
           await cargarConceptosDisponibles();
-          
-          // Limpiar formulario y cerrar modal
           setNuevoConcepto({ key: '', label: '', descripcion: '', activo: true });
           setShowAgregarConcepto(false);
-          
           alert(`✅ Concepto "${nuevoConcepto.label}" agregado exitosamente!`);
         }
       } else {
@@ -314,7 +307,7 @@ const PagosPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`https://citylights-gateway-production.up.railway.app/api/proxy/nomina/cuota-config/conceptos/${key}`, {
+      const response = await fetch(`${API_BASE}/conceptos/${key}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -323,18 +316,14 @@ const PagosPage: React.FC = () => {
       });
 
       if (response.ok) {
-        const data: ApiResponse<{ mensaje: string }> = await response.json();
+        const data = await response.json();
         if (data.success) {
-          // Remover del estado local
           setConceptosCuota(prev => {
             const newConceptos = { ...prev };
             delete newConceptos[key];
             return newConceptos;
           });
-
-          // Recargar conceptos disponibles
           await cargarConceptosDisponibles();
-          
           alert(`✅ ${data.data.mensaje}`);
         }
       } else {
